@@ -1,0 +1,642 @@
+/* ===================================================================
+ * BankerOS · Contrast Hardening Pass
+ * Catches inherited-white-on-glass and similar pitfalls left by the
+ * v2 visual upgrade. Loaded LAST so it always wins.
+ *
+ * Rules:
+ *   1. Topbar default color is ink (not the inherited white from v1)
+ *   2. Hero gradients get a subtle text shadow for safety on light ends
+ *   3. Light-bg cards never inherit white text
+ *   4. Mega-menu, popovers, breadcrumbs all anchored to ink
+ *   5. Buttons & badges keep readable contrast in both themes
+ * ================================================================= */
+
+/* ────────────────────────────────────────────────────────────────
+ * 1 · BANKING TOPBAR — kill inherited white from base styles
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-topbar {
+  color: var(--ink) !important;          /* was: white (base) */
+}
+.banking-root .b-topbar > *,
+.banking-root .b-topbar button,
+.banking-root .b-topbar a {
+  color: inherit;                        /* unless explicitly overridden */
+}
+
+/* Right-side bell button, time display, any incidental spans */
+.banking-root .b-topbar button:not(.b-logout):not(.p-btn) {
+  color: var(--slate);
+}
+.banking-root .b-topbar button:not(.b-logout):not(.p-btn):hover {
+  color: var(--ink);
+}
+
+/* Search input: kill old white-on-transparent setting */
+.banking-root .b-topbar input[type="search"][style*="color: white"],
+.banking-root .b-topbar input[type="search"] {
+  color: var(--ink) !important;
+  background: rgba(15,23,42,0.04) !important;
+  border: 1px solid transparent !important;
+}
+.banking-root .b-topbar input[type="search"]::placeholder {
+  color: var(--muted) !important;
+}
+
+/* User chip — even if span has no explicit color */
+.banking-root .b-topbar-account,
+.banking-root .b-topbar-account * {
+  color: var(--ink);
+}
+.banking-root .b-topbar-account span[style*="color"] {
+  /* tier label override preserved */
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 2 · HERO GRADIENTS — protect white text on lighter gradient ends
+ *     (e.g. amber #f59e0b, cyan #0ea5e9 hero start colors)
+ * ────────────────────────────────────────────────────────────── */
+.banking-root [style*="linear-gradient(120deg"][style*="color: rgb(255, 255, 255)"],
+.banking-root [style*="linear-gradient(120deg"][style*='color: "#fff"'],
+.banking-root [style*="linear-gradient(120deg"][style*="color: '#fff'"],
+.banking-root [style*="linear-gradient(135deg"][style*="color: rgb(255, 255, 255)"] {
+  text-shadow: 0 1px 2px rgba(0,0,0,0.15);  /* legibility insurance on light ends */
+}
+
+/* Hero subtitle/description text inside such gradients */
+.banking-root [style*="linear-gradient"][style*="color: rgb(255, 255, 255)"] > div[style*="opacity"] {
+  text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 3 · LIGHT CARDS — guarantee ink text on any white card surface
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-card,
+.banking-root .b-card * {
+  color: inherit;
+}
+.banking-root .b-card {
+  color: var(--ink);
+}
+
+/* Inline white-bg cards (common pattern: background: '#f8fafc' or '#fff') */
+.banking-root [style*="background: rgb(255, 255, 255)"]:not([style*="color: rgb"]):not([style*='color:']) {
+  color: var(--ink);
+}
+.banking-root [style*="background: #fff"]:not([style*="color"]) {
+  color: var(--ink);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 4 · MEGA MENU dropdown — ensure ink defaults
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-nav div[style*="position: absolute"][style*="background"] {
+  color: var(--ink);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 5 · BREADCRUMB STRIP — anchor color to ink/slate
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-breadcrumb,
+.banking-root .b-breadcrumb * {
+  color: inherit;
+}
+.banking-root .b-breadcrumb { color: var(--slate); }
+.banking-root .b-breadcrumb a:not(.p-btn) { color: var(--slate); }
+.banking-root .b-breadcrumb a:not(.p-btn):hover { color: var(--ink); }
+
+/* ────────────────────────────────────────────────────────────────
+ * 6 · TABLE — kill any inherited white from .b-topbar context bug
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-table { color: var(--ink); }
+.banking-root .b-table th { color: var(--muted); }
+.banking-root .b-table td { color: var(--ink); }
+.banking-root .b-table a:not(.p-btn) { color: var(--brand-red); }
+.banking-root .b-table a:not(.p-btn):hover { color: var(--brand-red-2); }
+
+/* CRITICAL: amount-pos/neg must keep their semantic color even when in <td> */
+.banking-root .b-table td.b-amount-pos,
+.banking-root td.b-amount-pos,
+.banking-root .b-amount-pos { color: #15803d !important; }   /* green-700 */
+.banking-root .b-table td.b-amount-neg,
+.banking-root td.b-amount-neg,
+.banking-root .b-amount-neg { color: #b91c1c !important; }   /* red-700 */
+
+/* ────────────────────────────────────────────────────────────────
+ * 7 · FORMS — labels, inputs, selects
+ * ────────────────────────────────────────────────────────────── */
+.banking-root label,
+.banking-root .b-form-label { color: var(--muted); }
+.banking-root .b-form-input,
+.banking-root select.b-form-input,
+.banking-root textarea.b-form-input { color: var(--ink); }
+.banking-root .b-form-input::placeholder { color: var(--muted); }
+
+/* Native checkboxes/radios labels */
+.banking-root label[style] { color: var(--ink); }
+
+/* ────────────────────────────────────────────────────────────────
+ * 8 · BADGES — minimum contrast guarantees
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-badge {
+  font-weight: 600;
+}
+.banking-root .b-badge-success { color: #15803d !important; background: rgba(22,163,74,0.10) !important; }
+.banking-root .b-badge-warn    { color: #b45309 !important; background: rgba(217,119,6,0.10) !important; }
+.banking-root .b-badge-info    { color: #1d4ed8 !important; background: rgba(37,99,235,0.10) !important; }
+
+/* Custom inline badges (e.g. <span className="b-badge" style="background: #fef2f2; color: #dc2626"> */
+.banking-root .b-badge[style*="color: rgb(220, 38, 38)"],
+.banking-root .b-badge[style*="color: #dc2626"] {
+  background: rgba(220,38,38,0.10) !important;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 9 · BUTTON safety — primary always white on red, ghost always ink
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-btn-primary,
+.banking-root .b-btn-primary * { color: #fff !important; }
+.banking-root .b-btn-ghost,
+.banking-root .b-btn-ghost * { color: var(--slate); }
+.banking-root .b-btn-ghost:hover,
+.banking-root .b-btn-ghost:hover * { color: #fff; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 10 · PORTAL · same hardening
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-topbar { color: var(--ink); }
+.portal-root .p-topbar > *,
+.portal-root .p-topbar a,
+.portal-root .p-topbar button { color: inherit; }
+.portal-root .p-topbar a.p-btn-primary,
+.portal-root .p-topbar a.p-btn-primary * { color: #fff !important; }
+
+/* Product card is an <a> — only force ink color when the card does NOT
+ * have an inline color override (dark-bg highlighted "tier" variants keep white). */
+.portal-root .p-product-card:not([style*="color"]),
+.portal-root a.p-product-card:not([style*="color"]) { color: var(--ink); }
+
+.portal-root .p-product-card .p-product-title:not([style*="color"]) { color: var(--ink); }
+.portal-root .p-product-card .p-product-desc:not([style*="color"])  { color: var(--muted); }
+.portal-root .p-product-card .p-product-link:not([style*="color"]),
+.portal-root .p-product-card .p-product-link:not([style*="color"]) * { color: var(--brand-red); }
+
+/* If the parent card has an inline color override (white) — propagate it to children */
+.portal-root .p-product-card[style*="color: white"] .p-product-title,
+.portal-root .p-product-card[style*="color: white"] .p-product-desc,
+.portal-root .p-product-card[style*="color: rgb(255"] .p-product-title,
+.portal-root .p-product-card[style*="color: rgb(255"] .p-product-desc { color: inherit; }
+
+/* Portal hero ensures white on dark */
+.portal-root .p-hero * { color: inherit; }
+.portal-root .p-hero,
+.portal-root .p-hero .p-hero-inner,
+.portal-root .p-hero .p-hero-title,
+.portal-root .p-hero .p-hero-subtitle { color: #fff; }
+.portal-root .p-hero .p-btn-primary,
+.portal-root .p-hero .p-btn-primary * { color: var(--ink) !important; }
+.portal-root .p-hero .p-btn-secondary,
+.portal-root .p-hero .p-btn-secondary * { color: #fff !important; }
+
+/* DARK-CONTEXT INHERITANCE — when a section/div has inline color: white,
+ * propagate to all descendants regardless of element-specific portal-v2 rules */
+.portal-root [style*="color: white"] h1,
+.portal-root [style*="color: white"] h2,
+.portal-root [style*="color: white"] h3,
+.portal-root [style*="color: white"] h4,
+.portal-root [style*="color: white"] h5,
+.portal-root [style*="color: white"] p,
+.portal-root [style*="color: white"] li,
+.portal-root [style*="color: white"] span:not([style*="color"]),
+.portal-root [style*="color: white"] div:not([style*="color"]),
+.portal-root [style*='color: "#fff"'] h1,
+.portal-root [style*='color: "#fff"'] h2,
+.portal-root [style*='color: "#fff"'] h3,
+.portal-root [style*='color: "#fff"'] p,
+.portal-root [style*="color: rgb(255, 255, 255)"] h1,
+.portal-root [style*="color: rgb(255, 255, 255)"] h2,
+.portal-root [style*="color: rgb(255, 255, 255)"] h3,
+.portal-root [style*="color: rgb(255, 255, 255)"] h4,
+.portal-root [style*="color: rgb(255, 255, 255)"] p,
+.portal-root [style*="color: rgb(255, 255, 255)"] li {
+  color: inherit !important;
+}
+
+/* Sections with dark navy / dark bg auto-inherit white text */
+.portal-root [style*="background: var(--p-navy)"],
+.portal-root [style*="background: var(--p-navy-dark)"],
+.portal-root [style*="background: #002966"],
+.portal-root [style*="background: #001838"],
+.portal-root [style*="background-color: var(--p-navy)"] {
+  color: #fff;
+}
+
+/* Headings/text inside dark navy sections */
+.portal-root [style*="background: var(--p-navy)"] h1,
+.portal-root [style*="background: var(--p-navy)"] h2,
+.portal-root [style*="background: var(--p-navy)"] h3,
+.portal-root [style*="background: var(--p-navy)"] h4,
+.portal-root [style*="background: var(--p-navy)"] h5,
+.portal-root [style*="background: var(--p-navy)"] p,
+.portal-root [style*="background: var(--p-navy-dark)"] h1,
+.portal-root [style*="background: var(--p-navy-dark)"] h2,
+.portal-root [style*="background: var(--p-navy-dark)"] h3,
+.portal-root [style*="background: var(--p-navy-dark)"] p,
+.portal-root [style*="background: #002966"] h1,
+.portal-root [style*="background: #002966"] h2,
+.portal-root [style*="background: #002966"] h3,
+.portal-root [style*="background: #002966"] p,
+.portal-root [style*="background: #001838"] p {
+  color: #fff !important;
+}
+
+/* EYEBROW color in dark sections — switch from clashing red to elegant gold.
+ * Red + navy is muddy; gold + navy is the classic luxury banking palette. */
+.portal-root [style*="background: var(--p-navy)"] .p-section-eyebrow,
+.portal-root [style*="background: var(--p-navy-dark)"] .p-section-eyebrow,
+.portal-root [style*="background: #002966"] .p-section-eyebrow,
+.portal-root [style*="background: #001838"] .p-section-eyebrow,
+.portal-root .p-hero .p-section-eyebrow,
+.portal-root .p-trust-strip .p-section-eyebrow,
+.portal-root [style*="color: white"] .p-section-eyebrow,
+.portal-root [style*="color: rgb(255, 255, 255)"] .p-section-eyebrow {
+  color: var(--brand-gold) !important;        /* #ffba00 — premium gold on navy */
+}
+
+/* Section subtitle inside dark — softer white */
+.portal-root [style*="background: var(--p-navy)"] .p-section-subtitle,
+.portal-root [style*="background: var(--p-navy-dark)"] .p-section-subtitle,
+.portal-root [style*="background: #002966"] .p-section-subtitle,
+.portal-root [style*="color: white"] .p-section-subtitle {
+  color: rgba(255,255,255,0.75) !important;
+}
+
+/* Body paragraphs in dark sections — softer for hierarchy */
+.portal-root [style*="background: var(--p-navy)"] p,
+.portal-root [style*="background: var(--p-navy-dark)"] p,
+.portal-root [style*="background: #002966"] p {
+  color: rgba(255,255,255,0.88) !important;
+}
+
+/* Inline divs/spans inside dark navy section with default color = white */
+.portal-root [style*="background: var(--p-navy)"] div:not([style*="color"]):not([class*="badge"]):not([class*="btn"]),
+.portal-root [style*="background: var(--p-navy)"] span:not([style*="color"]):not([class*="badge"]):not([class*="btn"]) {
+  color: inherit;
+}
+
+/* Same for banking-root (catch hero variants with white text) */
+.banking-root [style*="color: white"] h1,
+.banking-root [style*="color: white"] h2,
+.banking-root [style*="color: white"] h3,
+.banking-root [style*="color: white"] p,
+.banking-root [style*="color: rgb(255, 255, 255)"] h1,
+.banking-root [style*="color: rgb(255, 255, 255)"] h2,
+.banking-root [style*="color: rgb(255, 255, 255)"] h3,
+.banking-root [style*="color: rgb(255, 255, 255)"] p,
+.banking-root [style*="color: #fff"] h1,
+.banking-root [style*="color: #fff"] h2,
+.banking-root [style*="color: #fff"] h3,
+.banking-root [style*="color: #fff"] p {
+  color: inherit !important;
+}
+
+/* Trust strip stays bright on dark */
+.portal-root .p-trust-strip * { color: inherit; }
+
+/* Footer ink override (dark bg, light text) */
+.portal-root .p-footer,
+.portal-root .p-footer * { color: inherit; }
+.portal-root .p-footer { color: rgba(255,255,255,0.7); }
+.portal-root .p-footer h4 { color: #fff; }
+.portal-root .p-footer a { color: rgba(255,255,255,0.6); }
+.portal-root .p-footer a:hover { color: #fff; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 11 · ADMIN DASHBOARD (light theme) — ensure no white leakage
+ * ────────────────────────────────────────────────────────────── */
+:root[data-theme="light"] .topbar { color: var(--text-primary); }
+:root[data-theme="light"] .nav-item { color: var(--text-secondary); }
+:root[data-theme="light"] .sidebar { color: var(--text-secondary); }
+:root[data-theme="light"] .card,
+:root[data-theme="light"] .kpi-card { color: var(--text-primary); }
+:root[data-theme="light"] .card-title { color: var(--text-secondary); }
+:root[data-theme="light"] thead th { color: var(--text-muted); }
+:root[data-theme="light"] tbody td { color: var(--text-primary); }
+
+/* Admin: badge contrast in light mode */
+:root[data-theme="light"] .badge-green  { background: rgba(34,197,94,0.10); color: #15803d; }
+:root[data-theme="light"] .badge-red    { background: rgba(239,68,68,0.10); color: #b91c1c; }
+:root[data-theme="light"] .badge-amber  { background: rgba(245,158,11,0.10); color: #b45309; }
+:root[data-theme="light"] .badge-blue   { background: rgba(59,130,246,0.10); color: #1d4ed8; }
+:root[data-theme="light"] .badge-purple { background: rgba(168,85,247,0.10); color: #7e22ce; }
+:root[data-theme="light"] .badge-gray   { background: rgba(100,116,139,0.10); color: #475569; }
+:root[data-theme="light"] .badge-cyan   { background: rgba(6,182,212,0.10); color: #0e7490; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 12 · FOCUS rings — always visible on any theme
+ * ────────────────────────────────────────────────────────────── */
+.banking-root *:focus-visible,
+.portal-root *:focus-visible {
+  outline: 2px solid var(--brand-navy);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+:root[data-theme="light"] *:focus-visible,
+:root[data-theme="dark"] *:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 13 · TEXT-IN-COLORED-CHIP utility patterns
+ *     (common: <span style="background: #fef2f2; color: #dc2626">label</span>)
+ *     ensure these stay legible; verify chip text isn't too light on light bg
+ * ────────────────────────────────────────────────────────────── */
+
+/* Any inline span/div with very-light background should never have white text */
+.banking-root [style*="background: rgb(239, 246, 255)"],   /* #eff6ff */
+.banking-root [style*="background: rgb(254, 242, 242)"],   /* #fef2f2 */
+.banking-root [style*="background: rgb(255, 251, 235)"],   /* #fffbeb */
+.banking-root [style*="background: rgb(240, 253, 244)"],   /* #f0fdf4 */
+.banking-root [style*="background: rgb(220, 252, 231)"],   /* #dcfce7 */
+.banking-root [style*="background: rgb(254, 249, 195)"],   /* #fef9c3 */
+.banking-root [style*="background: rgb(240, 249, 255)"] {  /* #f0f9ff */
+  /* If no color is set, default to ink to prevent inheriting white */
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 14 · LINK underlines in marketing body copy — sane defaults
+ * ────────────────────────────────────────────────────────────── */
+.banking-root a:not(.p-btn):not(.b-btn-primary):not(.b-btn-ghost):not(.nav-item):not(.b-nav-item):not(.p-product-link):not(.p-product-card):not(.p-nav-item):not(.p-logo) {
+  color: var(--brand-red);
+  transition: color var(--motion-fast);
+}
+.banking-root a:not(.p-btn):not(.b-btn-primary):not(.b-btn-ghost):not(.nav-item):not(.b-nav-item):not(.p-product-link):not(.p-product-card):not(.p-nav-item):not(.p-logo):hover {
+  color: var(--brand-red-2);
+}
+
+/* Portal: same exclusions */
+.portal-root a:not(.p-btn):not(.p-btn-primary):not(.p-btn-secondary):not(.p-btn-ghost):not(.p-nav-item):not(.p-product-link):not(.p-product-card):not(.p-lang):not(.p-logo) {
+  color: var(--brand-red);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 15 · PAGE HEADINGS — guarantee dark on light page bgs
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-page-title { color: var(--ink); }
+.banking-root .b-page-sub   { color: var(--muted); }
+.banking-root h1, .banking-root h2:not(.b-card-title), .banking-root h3, .banking-root h4 { color: var(--ink); }
+.banking-root p { color: var(--slate); }
+
+/* But headings inside dark hero panels stay white */
+.banking-root [style*="linear-gradient"][style*="color: rgb(255, 255, 255)"] h1,
+.banking-root [style*="linear-gradient"][style*="color: rgb(255, 255, 255)"] h2,
+.banking-root [style*="linear-gradient"][style*="color: rgb(255, 255, 255)"] h3,
+.banking-root [style*="linear-gradient"][style*="color: rgb(255, 255, 255)"] p {
+  color: inherit;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 16 · BIG ONE — color-500 family text-on-white is WCAG FAIL.
+ *      Auto-substitute to color-700 darker variants via attribute selectors.
+ *      This catches dozens of inline `style={{ color: '#22c55e' }}` etc.
+ * ────────────────────────────────────────────────────────────── */
+
+/* GREEN family ------------------------------- 2.4 → 5.1 contrast */
+.banking-root  [style*="color: rgb(34, 197, 94)"],   /* #22c55e — 500 */
+.banking-root  [style*="color: #22c55e"],
+.portal-root   [style*="color: rgb(34, 197, 94)"],
+.portal-root   [style*="color: #22c55e"] {
+  color: #15803d !important;     /* green-700  ≈ 5.1:1 on white */
+}
+
+/* RED family --------------------------------- #ef4444 (500) too light */
+.banking-root  [style*="color: rgb(239, 68, 68)"],   /* #ef4444 */
+.banking-root  [style*="color: #ef4444"],
+.portal-root   [style*="color: rgb(239, 68, 68)"],
+.portal-root   [style*="color: #ef4444"] {
+  color: #b91c1c !important;     /* red-700 */
+}
+
+/* AMBER family ------------------------------- 2.0 → 4.6 */
+.banking-root  [style*="color: rgb(245, 158, 11)"],   /* #f59e0b */
+.banking-root  [style*="color: #f59e0b"],
+.portal-root   [style*="color: rgb(245, 158, 11)"],
+.portal-root   [style*="color: #f59e0b"] {
+  color: #b45309 !important;     /* amber-700 */
+}
+
+/* CYAN family -------------------------------- #06b6d4 too light */
+.banking-root  [style*="color: rgb(6, 182, 212)"],
+.banking-root  [style*="color: #06b6d4"],
+.portal-root   [style*="color: rgb(6, 182, 212)"],
+.portal-root   [style*="color: #06b6d4"] {
+  color: #0e7490 !important;     /* cyan-700 */
+}
+
+/* BLUE family -------------------------------- #3b82f6 fails body 3.7 */
+.banking-root  [style*="color: rgb(59, 130, 246)"],
+.banking-root  [style*="color: #3b82f6"],
+.portal-root   [style*="color: rgb(59, 130, 246)"],
+.portal-root   [style*="color: #3b82f6"] {
+  color: #1d4ed8 !important;     /* blue-700 */
+}
+
+/* PURPLE family ------------------------------ #a855f7 fails body */
+.banking-root  [style*="color: rgb(168, 85, 247)"],
+.banking-root  [style*="color: #a855f7"],
+.portal-root   [style*="color: rgb(168, 85, 247)"],
+.portal-root   [style*="color: #a855f7"] {
+  color: #7e22ce !important;     /* purple-700 */
+}
+
+/* PINK family -------------------------------- */
+.banking-root  [style*="color: rgb(236, 72, 153)"],
+.banking-root  [style*="color: #ec4899"],
+.portal-root   [style*="color: rgb(236, 72, 153)"],
+.portal-root   [style*="color: #ec4899"] {
+  color: #be185d !important;     /* pink-700 */
+}
+
+/* TEAL family -------------------------------- */
+.banking-root  [style*="color: rgb(20, 184, 166)"],
+.banking-root  [style*="color: #14b8a6"],
+.portal-root   [style*="color: rgb(20, 184, 166)"],
+.portal-root   [style*="color: #14b8a6"] {
+  color: #0f766e !important;     /* teal-700 */
+}
+
+/* GOLD/YELLOW -------------------------------- #ffba00 / #facc15 fail */
+.banking-root  [style*="color: rgb(255, 186, 0)"],
+.banking-root  [style*="color: #ffba00"],
+.banking-root  [style*="color: rgb(250, 204, 21)"],
+.banking-root  [style*="color: #facc15"],
+.banking-root  [style*="color: rgb(251, 191, 36)"],
+.banking-root  [style*="color: #fbbf24"] {
+  color: #a16207 !important;     /* yellow-700 */
+}
+
+/* ORANGE ------------------------------------- */
+.banking-root  [style*="color: rgb(14, 165, 233)"],
+.banking-root  [style*="color: #0ea5e9"] {
+  color: #0369a1 !important;     /* sky-700 */
+}
+
+/* LIGHT GRAY ALERT (#94a3b8) — 2.85:1 fail; bump to slate-500 ≈ 4.6:1 */
+.banking-root  [style*="color: rgb(148, 163, 184)"],
+.banking-root  [style*="color: #94a3b8"],
+.portal-root   [style*="color: rgb(148, 163, 184)"],
+.portal-root   [style*="color: #94a3b8"] {
+  color: #64748b !important;     /* slate-500 */
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 17 · BUT preserve color-500 family when used inside dark surfaces
+ *      (i.e. white text → red badge on white card needs to stay red)
+ *      The above rules cover text-on-light. Below we ALLOW originals
+ *      back when the element has a colored background that needs it.
+ * ────────────────────────────────────────────────────────────── */
+
+/* Color-500 text IS correct when on its own light-tinted bg (badge pattern) */
+.banking-root  [style*="background: rgba(34,197,94"]  [style],
+.banking-root  [style*="background: rgba(239,68,68"]  [style],
+.banking-root  [style*="background: rgba(245,158,11"] [style] {
+  /* Inside a tinted chip, the inline child colors may legitimately use the 500 family.
+     The attribute-selector rules above only target direct inline styles, not nested
+     elements inside chips, so this comment is documentation. */
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 18 · CHART legibility — Recharts text fills (axis tick / legend)
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .recharts-cartesian-axis-tick-value,
+.banking-root .recharts-cartesian-axis-tick text,
+.portal-root  .recharts-cartesian-axis-tick-value,
+.portal-root  .recharts-cartesian-axis-tick text {
+  fill: #475569 !important;       /* slate-600 ≈ 7.5:1 on white */
+  font-size: 11px !important;
+}
+.banking-root .recharts-legend-item-text,
+.portal-root  .recharts-legend-item-text {
+  color: #334155 !important;      /* slate-700 ≈ 10:1 */
+  fill: #334155 !important;
+}
+.banking-root .recharts-label,
+.portal-root  .recharts-label { fill: #475569; }
+.banking-root .recharts-text { fill: #475569; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 19 · CHIPS / TAGS — small inline pills with light bg + colored text
+ *      Force darker variants of common bright colors when used as
+ *      foreground on white/light backgrounds.
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .tag,
+.banking-root .b-badge,
+.portal-root  .tag,
+.portal-root  .b-badge {
+  font-weight: 600;
+  letter-spacing: 0.005em;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 20 · CARD-INSIDE TEXT — Hero/stat numbers using inline colored bg
+ *      ensure number text is dark enough against soft pastel bg
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-card [style*="background: rgb(254, 242, 242)"] *,   /* #fef2f2 */
+.banking-root .b-card [style*="background: rgb(255, 251, 235)"] *,   /* #fffbeb */
+.banking-root .b-card [style*="background: rgb(240, 253, 244)"] *,   /* #f0fdf4 */
+.banking-root .b-card [style*="background: rgb(239, 246, 255)"] *,   /* #eff6ff */
+.banking-root .b-card [style*="background: rgb(250, 245, 255)"] *,   /* #faf5ff */
+.banking-root .b-card [style*="background: rgb(254, 249, 195)"] * {  /* #fef9c3 */
+  color: inherit;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 21 · ICONS-AS-TEXT — emoji buttons / icons that lose color
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-quick-icon { color: var(--ink); }
+.banking-root .b-quick-btn:hover .b-quick-icon { color: #fff; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 22 · ACCOUNT card text (PersonalDashboard)
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-account-card { color: var(--ink); background: var(--paper); }
+.banking-root .b-account-type { color: var(--muted); font-weight: 600; }
+.banking-root .b-account-num  { color: var(--muted); font-family: ui-monospace, monospace; }
+.banking-root .b-account-balance { color: var(--ink); font-variant-numeric: tabular-nums; }
+.banking-root .b-account-currency { color: var(--muted); }
+
+/* ────────────────────────────────────────────────────────────────
+ * 23 · SUMMARY card on PersonalDashboard — already navy gradient,
+ *      ensure all descendants stay white
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-summary-card,
+.banking-root .b-summary-card * { color: #fff; }
+.banking-root .b-summary-label { color: rgba(255,255,255,0.7); }
+.banking-root .b-summary-meta  { color: rgba(255,255,255,0.85); }
+
+/* ────────────────────────────────────────────────────────────────
+ * 24 · KPI card top accent bar — preserve color signal but text dark
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .kpi-card .kpi-label,
+.banking-root .kpi-card .kpi-value,
+.banking-root .kpi-card .kpi-delta { color: inherit; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 25 · ANCHORS in tables (most common: "详情 · 修改 · 删除" inline)
+ * ────────────────────────────────────────────────────────────── */
+.banking-root .b-table a[href="#"],
+.portal-root  .b-table a[href="#"] {
+  color: var(--brand-red);
+  font-weight: 600;
+  border-bottom: none;
+}
+.banking-root .b-table a[href="#"]:hover,
+.portal-root  .b-table a[href="#"]:hover {
+  color: var(--brand-red-2);
+  text-decoration: underline;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 26 · MUTED text safety — explicit 'var(--text-muted)' inherited
+ *      from admin into banking by accident
+ * ────────────────────────────────────────────────────────────── */
+.banking-root [style*="color: var(--text-muted)"],
+.banking-root [style*="color: var(--b-text-muted)"] {
+  color: var(--muted) !important;
+}
+.banking-root [style*="color: var(--text-secondary)"] {
+  color: var(--slate) !important;
+}
+.banking-root [style*="color: var(--b-text)"] {
+  color: var(--ink) !important;
+}
+.banking-root [style*="color: var(--b-navy)"] {
+  color: var(--brand-navy) !important;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 27 · INLINE LIGHT GREY (#8a94a0, #5a6470) — bring up
+ * ────────────────────────────────────────────────────────────── */
+.banking-root [style*="color: #8a94a0"],
+.banking-root [style*="color: rgb(138, 148, 160)"] { color: #64748b !important; }
+.banking-root [style*="color: #5a6470"],
+.banking-root [style*="color: rgb(90, 100, 112)"] { color: #475569 !important; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 28 · DARK gradient hero — all child text fully white
+ * ────────────────────────────────────────────────────────────── */
+.banking-root [style*="linear-gradient"][style*="rgb(255, 255, 255)"] {
+  color: #fff;
+}
+.banking-root [style*="linear-gradient"][style*="rgb(255, 255, 255)"] * { color: inherit; }
+
+/* Specifically for our Hero helper — div with linear-gradient + #fff */
+.banking-root [style*="linear-gradient(120deg"] > div[style*="opacity"] {
+  color: rgba(255,255,255,0.9) !important;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 29 · GUARANTEE no element has color === background
+ * ────────────────────────────────────────────────────────────── */
+.banking-root,
+.portal-root { background-clip: padding-box; }

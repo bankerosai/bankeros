@@ -1,0 +1,41 @@
+## Staging overrides — smaller scale, single replicas
+global:
+  environment: staging
+  image:
+    tag: develop
+
+postgresql:
+  primary:
+    persistence:
+      size: 20Gi
+
+redis:
+  master:
+    persistence:
+      size: 5Gi
+
+kafka:
+  replicaCount: 1
+  controller:
+    replicaCount: 1
+
+services:
+  apiGateway:
+    replicas: 1
+    autoscaling: { enabled: false }
+  payments:
+    replicas: 1
+    autoscaling: { enabled: false }
+  compliance:
+    replicas: 1
+    autoscaling: { enabled: false }
+
+ingress:
+  hosts:
+    - host: api.staging.bankeros.io
+      paths: [{ path: /, pathType: Prefix, service: api-gateway }]
+    - host: dashboard.staging.bankeros.io
+      paths: [{ path: /, pathType: Prefix, service: admin-dashboard }]
+  tls:
+    - hosts: [api.staging.bankeros.io, dashboard.staging.bankeros.io]
+      secretName: bankeros-staging-tls

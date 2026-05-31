@@ -1,0 +1,60 @@
+groups:
+  - name: bankeros-critical
+    interval: 30s
+    rules:
+      # ── Service availability ────────────────────────────────────────────
+      - alert: ServiceDown
+        expr: up{job="bankeros-services"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: 'Service {{ $labels.instance }} is down'
+          description: '{{ $labels.instance }} has been unreachable for 2+ minutes'
+
+      # ── Financial integrity (P0) ───────────────────────────────────────
+      - alert: HighFraudBlockRate
+        expr: rate(bankeros_fraud_blocks_total[5m]) > 0.5
+        for: 5m
+        labels: { severity: critical, page: 'on-call-soc' }
+        annotations:
+          summary: 'Fraud block rate exceeds 0.5/sec'
+          description: 'Possible coordinated attack — review blocked payments immediately'
+
+      - alert: PaymentFailureSpike
+        expr: |
+          rate(bankeros_payments_processed_total{status="FAILED"}[5m])
+          /
+          rate(bankeros_payments_processed_total[5m]) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Payment failure rate > 5%'
+          description: 'Check downstream clearing systems'
+
+      # ── Latency SLOs ────────────────────────────────────────────────────
+      - alert: HighRequestLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(bankeros_http_request_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: 'p95 latency > 1s on {{ $labels.service }}'
+
+      # ── Operational ─────────────────────────────────────────────────────
+      - alert: EodJobDurationExcessive
+        expr: bankeros_eod_job_duration_seconds_sum / bankeros_eod_job_duration_seconds_count > 600
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: 'EOD batch averaging >10 minutes'
+          description: 'Investigate batch performance regression'
+
+      - alert: KycHighSanctionsHitRate
+        expr: |
+          rate(bankeros_kyc_screenings_total{result="MATCH"}[1h]) > 1
+        for: 30m
+        labels: { severity: warning, team: 'compliance' }
+        annotations:
+          summary: 'Sanctions matches exceeding 1/hour'

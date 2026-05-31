@@ -1,0 +1,53 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+# Copy workspace manifests
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY tsconfig.base.json ./
+
+# Copy all package manifests first (for layer caching)
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY packages/shared-utils/package.json ./packages/shared-utils/
+COPY packages/database/package.json ./packages/database/
+
+# Will be replaced by service-specific ARG
+ARG SERVICE_NAME
+COPY apps/${SERVICE_NAME}/package.json ./apps/${SERVICE_NAME}/
+
+RUN pnpm install --frozen-lockfile
+
+# Copy source
+COPY packages/ ./packages/
+COPY apps/${SERVICE_NAME}/ ./apps/${SERVICE_NAME}/
+
+# Build shared packages first
+RUN pnpm --filter @bankeros/shared-types build
+RUN pnpm --filter @bankeros/shared-utils build
+RUN pnpm --filter @bankeros/database db:generate
+RUN pnpm --filter @bankeros/${SERVICE_NAME} build
+
+# ---- Production image ----
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+ARG SERVICE_NAME
+ENV SERVICE_NAME=${SERVICE_NAME}
+ENV NODE_ENV=production
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/${SERVICE_NAME}/dist ./dist
+COPY --from=builder /app/apps/${SERVICE_NAME}/package.json ./
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
+  CMD wget -qO- http://localhost:3000/health || exit 1
+
+CMD ["node", "dist/index.js"]

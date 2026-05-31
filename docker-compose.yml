@@ -1,0 +1,406 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bankeros-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bankeros}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bankeros_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-bankeros_core}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankeros"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: bankeros-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secret}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: bankeros-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: bankeros-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  api-gateway:
+    build:
+      context: ./apps/api-gateway
+      dockerfile: Dockerfile
+    container_name: bankeros-api-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      IAM_SERVICE_URL: http://iam-service:3001
+      GL_SERVICE_URL: http://gl-service:3002
+      ONBOARDING_SERVICE_URL: http://onboarding-service:3003
+      LENDING_SERVICE_URL: http://lending-service:3004
+      PAYMENTS_SERVICE_URL: http://payments-service:3005
+      COMPLIANCE_SERVICE_URL: http://compliance-service:3006
+      TRADE_FINANCE_SERVICE_URL: http://trade-finance-service:3007
+      WEALTH_SERVICE_URL: http://wealth-service:3008
+      LIQUIDITY_SERVICE_URL: http://liquidity-service:3009
+      BATCH_SERVICE_URL: http://batch-service:3010
+    depends_on:
+      - iam-service
+
+  iam-service:
+    build:
+      context: ./apps/iam-service
+      dockerfile: Dockerfile
+    container_name: bankeros-iam
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      REDIS_URL: redis://:redis_secret@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      JWT_EXPIRES_IN: 3600
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  gl-service:
+    build:
+      context: ./apps/gl-service
+      dockerfile: Dockerfile
+    container_name: bankeros-gl
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  onboarding-service:
+    build:
+      context: ./apps/onboarding-service
+      dockerfile: Dockerfile
+    container_name: bankeros-onboarding
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      KAFKA_BROKERS: kafka:9092
+      COMPLIANCE_SERVICE_URL: http://compliance-service:3006
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  lending-service:
+    build:
+      context: ./apps/lending-service
+      dockerfile: Dockerfile
+    container_name: bankeros-lending
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    environment:
+      NODE_ENV: production
+      PORT: 3004
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  payments-service:
+    build:
+      context: ./apps/payments-service
+      dockerfile: Dockerfile
+    container_name: bankeros-payments
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://:redis_secret@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  compliance-service:
+    build:
+      context: ./apps/compliance-service
+      dockerfile: Dockerfile
+    container_name: bankeros-compliance
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    environment:
+      NODE_ENV: production
+      PORT: 3006
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  trade-finance-service:
+    build:
+      context: ./apps/trade-finance-service
+      dockerfile: Dockerfile
+    container_name: bankeros-trade-finance
+    restart: unless-stopped
+    ports:
+      - "3007:3007"
+    environment:
+      NODE_ENV: production
+      PORT: 3007
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  wealth-service:
+    build:
+      context: ./apps/wealth-service
+      dockerfile: Dockerfile
+    container_name: bankeros-wealth
+    restart: unless-stopped
+    ports:
+      - "3008:3008"
+    environment:
+      NODE_ENV: production
+      PORT: 3008
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  liquidity-service:
+    build:
+      context: ./apps/liquidity-service
+      dockerfile: Dockerfile
+    container_name: bankeros-liquidity
+    restart: unless-stopped
+    ports:
+      - "3009:3009"
+    environment:
+      NODE_ENV: production
+      PORT: 3009
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  batch-service:
+    build:
+      context: ./apps/batch-service
+      dockerfile: Dockerfile
+    container_name: bankeros-batch
+    restart: unless-stopped
+    ports:
+      - "3010:3010"
+    environment:
+      NODE_ENV: production
+      PORT: 3010
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      REDIS_URL: redis://:redis_secret@redis:6379
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  markets-service:
+    build:
+      context: ./apps/markets-service
+      dockerfile: Dockerfile
+    container_name: bankeros-markets
+    restart: unless-stopped
+    ports:
+      - "3011:3011"
+    environment:
+      NODE_ENV: production
+      PORT: 3011
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  product-factory-service:
+    build:
+      context: ./apps/product-factory-service
+      dockerfile: Dockerfile
+    container_name: bankeros-product-factory
+    restart: unless-stopped
+    ports:
+      - "3012:3012"
+    environment:
+      NODE_ENV: production
+      PORT: 3012
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  syndication-service:
+    build:
+      context: ./apps/syndication-service
+      dockerfile: Dockerfile
+    container_name: bankeros-syndication
+    restart: unless-stopped
+    ports:
+      - "3013:3013"
+    environment:
+      NODE_ENV: production
+      PORT: 3013
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cdp-service:
+    build:
+      context: ./apps/cdp-service
+      dockerfile: Dockerfile
+    container_name: bankeros-cdp
+    restart: unless-stopped
+    ports:
+      - "3014:3014"
+    environment:
+      NODE_ENV: production
+      PORT: 3014
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  digital-assets-service:
+    build:
+      context: ./apps/digital-assets-service
+      dockerfile: Dockerfile
+    container_name: bankeros-digital-assets
+    restart: unless-stopped
+    ports:
+      - "3015:3015"
+    environment:
+      NODE_ENV: production
+      PORT: 3015
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  middle-office-service:
+    build:
+      context: ./apps/middle-office-service
+      dockerfile: Dockerfile
+    container_name: bankeros-middle-office
+    restart: unless-stopped
+    ports:
+      - "3016:3016"
+    environment:
+      NODE_ENV: production
+      PORT: 3016
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  admin-dashboard:
+    build:
+      context: ./apps/admin-dashboard
+      dockerfile: Dockerfile
+    container_name: bankeros-dashboard
+    restart: unless-stopped
+    ports:
+      - "5200:80"
+    depends_on:
+      - api-gateway
+
+  # ── Observability stack ─────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: bankeros-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: bankeros-grafana
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: bankeros_grafana
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

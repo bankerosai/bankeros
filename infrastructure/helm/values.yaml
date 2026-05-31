@@ -1,0 +1,193 @@
+## BankerOS default Helm values
+## Override per-environment in values-{env}.yaml
+
+global:
+  environment: production
+  image:
+    registry: ghcr.io
+    repository: bankeros/bankeros
+    tag: latest
+    pullPolicy: IfNotPresent
+
+# Top-level dependencies — disable if using managed services
+postgresql:
+  enabled: true
+  auth:
+    username: bankeros
+    password: bankeros_secret
+    database: bankeros_core
+  primary:
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClass: ""
+
+redis:
+  enabled: true
+  auth:
+    password: redis_secret
+  master:
+    persistence:
+      enabled: true
+      size: 20Gi
+
+kafka:
+  enabled: true
+  replicaCount: 3
+  controller:
+    replicaCount: 3
+
+# Each microservice can override defaults; only deltas listed.
+services:
+  apiGateway:
+    enabled: true
+    replicas: 2
+    port: 3000
+    serviceType: LoadBalancer
+    resources:
+      requests: { cpu: 200m, memory: 256Mi }
+      limits:   { cpu: 1000m, memory: 1Gi }
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 8
+      targetCPU: 65
+
+  iam:
+    enabled: true
+    replicas: 2
+    port: 3001
+
+  gl:
+    enabled: true
+    replicas: 2
+    port: 3002
+
+  onboarding:
+    enabled: true
+    replicas: 2
+    port: 3003
+
+  lending:
+    enabled: true
+    replicas: 2
+    port: 3004
+
+  payments:
+    enabled: true
+    replicas: 3
+    port: 3005
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 20
+      targetCPU: 60
+
+  compliance:
+    enabled: true
+    replicas: 2
+    port: 3006
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+
+  tradeFinance:
+    enabled: true
+    replicas: 1
+    port: 3007
+
+  wealth:
+    enabled: true
+    replicas: 2
+    port: 3008
+
+  liquidity:
+    enabled: true
+    replicas: 1
+    port: 3009
+
+  batch:
+    enabled: true
+    replicas: 1
+    port: 3010
+
+  markets:
+    enabled: true
+    replicas: 2
+    port: 3011
+
+  productFactory:
+    enabled: true
+    replicas: 1
+    port: 3012
+
+  syndication:
+    enabled: true
+    replicas: 1
+    port: 3013
+
+  cdp:
+    enabled: true
+    replicas: 2
+    port: 3014
+
+  digitalAssets:
+    enabled: true
+    replicas: 1
+    port: 3015
+
+  middleOffice:
+    enabled: true
+    replicas: 1
+    port: 3016
+
+  adminDashboard:
+    enabled: true
+    replicas: 2
+    port: 80
+    image:
+      repository: bankeros/bankeros/admin-dashboard
+
+# Shared environment for all services
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info
+
+# Secrets injected via Kubernetes Secret (managed externally, e.g. via sealed-secrets / Vault)
+secrets:
+  name: bankeros-secrets
+  # Keys: jwt-secret, database-url, redis-url, encryption-key, fx-rates-api-key
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  hosts:
+    - host: api.bankeros.io
+      paths: [{ path: /, pathType: Prefix, service: api-gateway }]
+    - host: dashboard.bankeros.io
+      paths: [{ path: /, pathType: Prefix, service: admin-dashboard }]
+  tls:
+    - hosts: [api.bankeros.io, dashboard.bankeros.io]
+      secretName: bankeros-tls
+
+resources:
+  default:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true

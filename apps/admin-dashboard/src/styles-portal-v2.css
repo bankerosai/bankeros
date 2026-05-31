@@ -1,0 +1,702 @@
+/* ===================================================================
+ * BankerOS Public Portal — Design System v2.0 "Editorial Banking"
+ * Upgrades every .portal-root marketing page.
+ * Loaded AFTER styles-portal.css so these declarations win.
+ * ================================================================= */
+
+/* ────────────────────────────────────────────────────────────────
+ * 0 · DESIGN TOKENS  (same vocabulary as banking-v2 for consistency)
+ * ────────────────────────────────────────────────────────────── */
+.portal-root {
+  /* — Neutrals (6-step ramp) — */
+  --ink:       #0b1220;
+  --slate:     #334155;
+  --muted:     #64748b;
+  --line:      #e6eaf0;
+  --line-soft: #f1f4f8;
+  --canvas:    #ffffff;
+  --paper:     #ffffff;
+  --soft-bg:   #f7f9fc;
+
+  /* — Brand — */
+  --brand-red:    #db0011;
+  --brand-red-2:  #b00010;
+  --brand-navy:   #002966;
+  --brand-navy-2: #001838;
+  --brand-gold:   #ffba00;
+  --brand-jade:   #16a34a;
+  --brand-violet: #9333ea;
+
+  /* — Signals — */
+  --ok: #16a34a; --warn: #d97706; --danger: #dc2626; --info: #2563eb;
+
+  /* — Typography — */
+  --font-sans: 'Inter', 'HSBC Sans', -apple-system, BlinkMacSystemFont,
+               'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+
+  /* — Spacing — */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
+  --space-4: 16px; --space-5: 20px; --space-6: 24px;
+  --space-8: 32px; --space-12: 48px; --space-16: 64px; --space-20: 80px;
+
+  /* — Radius — */
+  --r-sm: 6px;  --r-md: 10px;  --r-lg: 14px;  --r-xl: 20px;
+
+  /* — Elevation — */
+  --e1: 0 1px 2px rgba(15,23,42,0.04), 0 1px 1px rgba(15,23,42,0.06);
+  --e2: 0 12px 32px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04);
+  --e3: 0 24px 60px rgba(15,23,42,0.12), 0 8px 16px rgba(15,23,42,0.06);
+
+  /* — Motion — */
+  --motion-fast: 120ms; --motion-base: 200ms; --motion-slow: 320ms;
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.5, 1.6, 0.4, 1);
+
+  font-family: var(--font-sans);
+  font-feature-settings: 'tnum' 1, 'ss01' 1, 'cv11' 1;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.005em;
+}
+
+/* Scrollbar */
+.portal-root ::-webkit-scrollbar { width: 10px; height: 10px; }
+.portal-root ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; border: 2px solid #f7f9fc; }
+.portal-root ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Selection + focus */
+.portal-root ::selection { background: rgba(219,0,17,0.12); color: var(--ink); }
+.portal-root *:focus-visible {
+  outline: 2px solid var(--brand-navy);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-root *, .portal-root *::before, .portal-root *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 1 · TOPBAR — glass, elevated
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-topbar {
+  background: rgba(255,255,255,0.85);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(15,23,42,0.06);
+  box-shadow: 0 1px 0 rgba(15,23,42,0.02), 0 8px 24px -16px rgba(15,23,42,0.08);
+  height: 68px;
+  padding: 0 40px;
+  gap: 28px;
+}
+
+.portal-root .p-logo-mark {
+  background: linear-gradient(135deg, var(--brand-red), var(--brand-navy));
+  border-radius: 8px;
+  width: 36px; height: 36px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(219,0,17,0.22);
+}
+.portal-root .p-logo-text {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+}
+.portal-root .p-logo-sub {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Nav items */
+.portal-root .p-nav { gap: 4px; }
+.portal-root .p-nav-item {
+  color: var(--slate);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  padding: 8px 14px;
+  border-radius: var(--r-md);
+  transition: all var(--motion-fast) var(--ease-out);
+}
+.portal-root .p-nav-item:hover {
+  color: var(--ink);
+  background: rgba(15,23,42,0.04);
+}
+.portal-root .p-nav-item.active {
+  color: var(--brand-red);
+  background: rgba(219,0,17,0.06);
+}
+
+.portal-root .p-lang {
+  color: var(--slate);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: var(--r-md);
+  transition: background var(--motion-fast);
+}
+.portal-root .p-lang:hover { background: rgba(15,23,42,0.04); }
+
+/* ────────────────────────────────────────────────────────────────
+ * 2 · BUTTONS
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-btn {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  padding: 11px 22px;
+  border-radius: var(--r-md);
+  transition: all var(--motion-fast) var(--ease-out);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.portal-root .p-btn:active { transform: translateY(1px); }
+
+.portal-root .p-btn-primary {
+  background: var(--brand-red);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 2px 4px rgba(219,0,17,0.18);
+}
+.portal-root .p-btn-primary:hover {
+  background: var(--brand-red-2);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(219,0,17,0.28);
+}
+
+.portal-root .p-btn-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.portal-root .p-btn-secondary:hover {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.portal-root .p-btn-ghost {
+  background: transparent;
+  color: var(--slate);
+  font-weight: 600;
+}
+.portal-root .p-btn-ghost:hover { color: var(--brand-red); background: transparent; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 3 · HERO — cinematic gradient + animated orbs
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-hero {
+  position: relative;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(147,51,234,0.10) 0%, transparent 50%),
+    radial-gradient(100% 80% at 100% 100%, rgba(219,0,17,0.10) 0%, transparent 55%),
+    linear-gradient(135deg, var(--brand-navy-2) 0%, var(--brand-navy) 60%, #0f3672 100%);
+  color: #fff;
+  padding: 96px 48px 120px;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 0;
+}
+.portal-root .p-hero::before {
+  content: '';
+  position: absolute;
+  top: -200px; right: -200px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(255,186,0,0.18) 0%, transparent 60%);
+  border-radius: 50%;
+  filter: blur(60px);
+  z-index: -1;
+  animation: orbFloat 18s ease-in-out infinite;
+}
+.portal-root .p-hero::after {
+  content: '';
+  position: absolute;
+  bottom: -240px; left: -180px;
+  width: 520px; height: 520px;
+  background: radial-gradient(circle, rgba(219,0,17,0.22) 0%, transparent 60%);
+  border-radius: 50%;
+  filter: blur(70px);
+  z-index: -1;
+  animation: orbFloat 22s ease-in-out infinite reverse;
+}
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(40px, -30px) scale(1.1); }
+}
+
+.portal-root .p-hero-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.portal-root .p-hero-title {
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin-bottom: 20px;
+  color: #fff;
+}
+.portal-root .p-hero-title .accent {
+  background: linear-gradient(120deg, var(--brand-gold) 0%, #fde047 60%, #fff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.portal-root .p-hero-subtitle {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: rgba(255,255,255,0.82);
+  max-width: 640px;
+  margin-bottom: 36px;
+  letter-spacing: -0.005em;
+}
+
+.portal-root .p-hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+.portal-root .p-hero .p-btn-primary {
+  background: #fff; color: var(--ink);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.18);
+}
+.portal-root .p-hero .p-btn-primary:hover {
+  background: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.24);
+}
+.portal-root .p-hero .p-btn-secondary {
+  border-color: rgba(255,255,255,0.3);
+  color: #fff;
+  backdrop-filter: blur(10px);
+  background: rgba(255,255,255,0.05);
+}
+.portal-root .p-hero .p-btn-secondary:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.5);
+  color: #fff;
+}
+
+.portal-root .p-hero-card {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: var(--r-xl);
+  padding: 32px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.28);
+}
+.portal-root .p-hero-card h3 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 18px;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 4 · SECTION rhythm
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-section { padding: 96px 48px; }
+.portal-root .p-section-inner { max-width: 1280px; margin: 0 auto; }
+
+.portal-root .p-section-header { margin-bottom: 48px; text-align: center; }
+.portal-root .p-section-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand-red);
+  margin-bottom: 12px;
+}
+.portal-root .p-section-title {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+.portal-root .p-section-subtitle {
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--muted);
+  max-width: 640px;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+
+/* Section background variations */
+.portal-root .p-section.bg-soft { background: var(--soft-bg); }
+.portal-root .p-section.bg-dark {
+  background: var(--brand-navy-2); color: #fff;
+}
+.portal-root .p-section.bg-dark .p-section-title { color: #fff; }
+.portal-root .p-section.bg-dark .p-section-subtitle { color: rgba(255,255,255,0.7); }
+
+/* ────────────────────────────────────────────────────────────────
+ * 5 · PRODUCT GRID — premium hover, accent line
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.portal-root .p-product-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 28px 24px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    transform var(--motion-base) var(--ease-out),
+    box-shadow var(--motion-base) var(--ease-out),
+    border-color var(--motion-base) var(--ease-out);
+  isolation: isolate;
+}
+.portal-root .p-product-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-red), var(--brand-navy));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--motion-slow) var(--ease-out);
+}
+.portal-root .p-product-card:hover {
+  transform: translateY(-4px);
+  border-color: transparent;
+  box-shadow: var(--e3);
+}
+.portal-root .p-product-card:hover::before { transform: scaleX(1); }
+
+.portal-root .p-product-icon {
+  width: 52px; height: 52px;
+  background: linear-gradient(135deg, rgba(219,0,17,0.08), rgba(0,41,102,0.04));
+  border-radius: var(--r-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px;
+  margin-bottom: 18px;
+  transition: all var(--motion-base) var(--ease-out);
+}
+.portal-root .p-product-card:hover .p-product-icon {
+  background: linear-gradient(135deg, var(--brand-red), var(--brand-navy));
+  color: #fff;
+  transform: scale(1.05);
+}
+
+.portal-root .p-product-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+.portal-root .p-product-desc {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin-bottom: 18px;
+}
+.portal-root .p-product-link {
+  color: var(--brand-red);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: gap var(--motion-fast) var(--ease-out);
+}
+.portal-root .p-product-card:hover .p-product-link { gap: 8px; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 6 · TRUST STRIP — refined numbers
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-trust-strip {
+  background: var(--brand-navy-2);
+  padding: 56px 48px;
+  position: relative;
+  overflow: hidden;
+}
+.portal-root .p-trust-strip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 80% at 50% 0%, rgba(255,186,0,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.portal-root .p-trust-row {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+  position: relative;
+}
+.portal-root .p-trust-item { text-align: center; }
+.portal-root .p-trust-num {
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 4px;
+}
+.portal-root .p-trust-label {
+  font-size: 13px;
+  color: rgba(255,255,255,0.65);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 7 · FOOTER — refined
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-footer {
+  background: #0a0f1c;
+  color: rgba(255,255,255,0.7);
+  padding: 72px 48px 32px;
+}
+.portal-root .p-footer-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.4fr repeat(4, 1fr);
+  gap: 48px;
+}
+.portal-root .p-footer h4 {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.portal-root .p-footer ul { list-style: none; padding: 0; margin: 0; }
+.portal-root .p-footer li { margin-bottom: 10px; }
+.portal-root .p-footer a {
+  color: rgba(255,255,255,0.6);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 400;
+  transition: color var(--motion-fast);
+}
+.portal-root .p-footer a:hover { color: #fff; }
+.portal-root .p-footer-bottom {
+  max-width: 1280px;
+  margin: 56px auto 0;
+  padding-top: 28px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 8 · MOTION — first-paint fade-up for sections
+ * ────────────────────────────────────────────────────────────── */
+@keyframes portalFadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.portal-root .p-section { animation: portalFadeUp 600ms var(--ease-out) both; }
+.portal-root .p-product-card {
+  animation: portalFadeUp 500ms var(--ease-out) both;
+}
+.portal-root .p-product-grid .p-product-card:nth-child(1) { animation-delay: 0ms; }
+.portal-root .p-product-grid .p-product-card:nth-child(2) { animation-delay: 60ms; }
+.portal-root .p-product-grid .p-product-card:nth-child(3) { animation-delay: 120ms; }
+.portal-root .p-product-grid .p-product-card:nth-child(4) { animation-delay: 180ms; }
+.portal-root .p-product-grid .p-product-card:nth-child(5) { animation-delay: 240ms; }
+.portal-root .p-product-grid .p-product-card:nth-child(6) { animation-delay: 300ms; }
+.portal-root .p-product-grid .p-product-card:nth-child(n+7) { animation-delay: 360ms; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 9 · PRODUCT DETAIL PAGE (heavy inline styles — target by data attr)
+ *    ProductDetailPage / ProductDetailLite use inline styles but render
+ *    consistent semantic blocks we can target.
+ * ────────────────────────────────────────────────────────────── */
+
+/* Anchor-nav rails (sticky side TOC in detail pages) */
+.portal-root nav[aria-label*="目录"],
+.portal-root nav[class*="toc"],
+.portal-root [data-toc] {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e1);
+}
+
+/* Section anchor headings within detail pages */
+.portal-root h2[id], .portal-root h3[id] { scroll-margin-top: 96px; }
+
+/* Inline detail-page cards (typical: white bg + border + padding via inline) */
+.portal-root [style*="background: rgb(255, 255, 255)"][style*="border-radius"][style*="padding"] {
+  transition: box-shadow var(--motion-base) var(--ease-out),
+              transform var(--motion-base) var(--ease-out);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 10 · LOGIN page — center stage refinement (PortalLogin)
+ * ────────────────────────────────────────────────────────────── */
+.portal-root [class*="login-"],
+.portal-root form[class*="login"] {
+  background: var(--paper);
+  border-radius: var(--r-xl);
+  box-shadow: var(--e3);
+  border: 1px solid var(--line);
+}
+
+/* Login background — refined gradient backdrop */
+.portal-root[data-page="login"],
+.portal-root .login-page-bg {
+  background:
+    radial-gradient(60% 80% at 30% 20%, rgba(147,51,234,0.10) 0%, transparent 60%),
+    radial-gradient(50% 60% at 80% 80%, rgba(219,0,17,0.08) 0%, transparent 60%),
+    linear-gradient(180deg, #f7f9fc 0%, #ffffff 100%);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 11 · UTILITY classes (also useful for portal pages)
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brand-red);
+}
+.portal-root .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 100px;
+  background: rgba(0,41,102,0.08);
+  color: var(--brand-navy);
+}
+.portal-root .badge-new { background: rgba(219,0,17,0.10); color: var(--brand-red); }
+.portal-root .badge-hot { background: rgba(217,119,6,0.12); color: var(--warn); }
+
+.portal-root .divider {
+  height: 1px;
+  background: var(--line);
+  margin: 32px 0;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 12 · TYPOGRAPHY rhythm for marketing prose
+ * ────────────────────────────────────────────────────────────── */
+.portal-root h1 { font-size: 48px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; color: var(--ink); }
+.portal-root h2 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em;  line-height: 1.2; color: var(--ink); }
+.portal-root h3 { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.25; color: var(--ink); }
+.portal-root h4 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em;  line-height: 1.3; color: var(--ink); }
+.portal-root p  { font-size: 15px; font-weight: 400; color: var(--slate); line-height: 1.65; }
+
+/* Links inside body copy — careful to exclude product cards (themselves <a>) and logos */
+.portal-root p a,
+.portal-root li a:not([class]),
+.portal-root .prose a {
+  color: var(--brand-red);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(219,0,17,0.2);
+  transition: border-color var(--motion-fast);
+}
+.portal-root p a:hover,
+.portal-root li a:not([class]):hover,
+.portal-root .prose a:hover {
+  border-bottom-color: var(--brand-red);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 13 · CTAs strip (call-to-action band at bottom of marketing pages)
+ *      class .p-cta — convention for any CTA band
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .p-cta {
+  background:
+    radial-gradient(60% 80% at 20% 20%, rgba(255,186,0,0.10) 0%, transparent 60%),
+    linear-gradient(135deg, var(--brand-red) 0%, #8b0010 100%);
+  color: #fff;
+  padding: 80px 48px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.portal-root .p-cta h2 { color: #fff; font-size: 38px; margin-bottom: 14px; letter-spacing: -0.02em; }
+.portal-root .p-cta p  { color: rgba(255,255,255,0.85); font-size: 16px; max-width: 640px; margin: 0 auto 28px; }
+.portal-root .p-cta .p-btn-primary {
+  background: #fff; color: var(--brand-red);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+.portal-root .p-cta .p-btn-primary:hover {
+  background: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 14 · RECHARTS theming (any charts on portal product pages)
+ * ────────────────────────────────────────────────────────────── */
+.portal-root .recharts-cartesian-axis-tick-value { font-size: 11px; fill: var(--muted); }
+.portal-root .recharts-default-tooltip {
+  border-radius: var(--r-md) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: var(--e2) !important;
+  padding: 10px 12px !important;
+  background: var(--paper) !important;
+}
+.portal-root .recharts-tooltip-label { font-size: 11px; color: var(--muted); margin-bottom: 6px !important; }
+.portal-root .recharts-tooltip-item { font-size: 12px !important; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 15 · RESPONSIVE
+ * ────────────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .portal-root .p-hero-title { font-size: 42px; }
+  .portal-root .p-section-title { font-size: 32px; }
+  .portal-root .p-section { padding: 72px 32px; }
+  .portal-root .p-hero { padding: 72px 32px 96px; }
+  .portal-root .p-trust-row { grid-template-columns: repeat(2, 1fr); gap: 24px; }
+  .portal-root .p-trust-num { font-size: 36px; }
+  .portal-root .p-footer-inner { grid-template-columns: 1fr 1fr; gap: 32px; }
+}
+@media (max-width: 640px) {
+  .portal-root .p-topbar { padding: 0 20px; height: 60px; }
+  .portal-root .p-hero { padding: 56px 20px 72px; }
+  .portal-root .p-hero-title { font-size: 32px; }
+  .portal-root .p-hero-subtitle { font-size: 15px; }
+  .portal-root .p-section { padding: 56px 20px; }
+  .portal-root .p-section-title { font-size: 26px; }
+  .portal-root .p-product-grid { grid-template-columns: 1fr; }
+  .portal-root .p-trust-strip { padding: 40px 20px; }
+  .portal-root .p-trust-num { font-size: 28px; }
+  .portal-root .p-footer { padding: 56px 20px 24px; }
+  .portal-root .p-footer-inner { grid-template-columns: 1fr; gap: 32px; }
+  .portal-root .p-cta { padding: 56px 20px; }
+  .portal-root .p-cta h2 { font-size: 26px; }
+}

@@ -1,0 +1,180 @@
+{{/*
+Generate a Deployment + Service + (optional) HPA for each enabled microservice.
+Defined as a single template per service block since Helm doesn't loop dynamically.
+*/}}
+
+{{- $services := list
+  (dict "key" "apiGateway"      "name" "api-gateway"             "default_replicas" 2)
+  (dict "key" "iam"             "name" "iam-service"             "default_replicas" 2)
+  (dict "key" "gl"              "name" "gl-service"              "default_replicas" 2)
+  (dict "key" "onboarding"      "name" "onboarding-service"      "default_replicas" 2)
+  (dict "key" "lending"         "name" "lending-service"         "default_replicas" 2)
+  (dict "key" "payments"        "name" "payments-service"        "default_replicas" 3)
+  (dict "key" "compliance"      "name" "compliance-service"      "default_replicas" 2)
+  (dict "key" "tradeFinance"    "name" "trade-finance-service"   "default_replicas" 1)
+  (dict "key" "wealth"          "name" "wealth-service"          "default_replicas" 2)
+  (dict "key" "liquidity"       "name" "liquidity-service"       "default_replicas" 1)
+  (dict "key" "batch"           "name" "batch-service"           "default_replicas" 1)
+  (dict "key" "markets"         "name" "markets-service"         "default_replicas" 2)
+  (dict "key" "productFactory"  "name" "product-factory-service" "default_replicas" 1)
+  (dict "key" "syndication"     "name" "syndication-service"     "default_replicas" 1)
+  (dict "key" "cdp"             "name" "cdp-service"             "default_replicas" 2)
+  (dict "key" "digitalAssets"   "name" "digital-assets-service"  "default_replicas" 1)
+  (dict "key" "middleOffice"    "name" "middle-office-service"   "default_replicas" 1)
+  (dict "key" "adminDashboard"  "name" "admin-dashboard"         "default_replicas" 2)
+-}}
+
+{{- range $svc := $services }}
+{{- $cfg := index $.Values.services $svc.key }}
+{{- if $cfg.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "bankeros.labels" $ | nindent 4 }}
+    app: {{ $svc.name }}
+spec:
+  type: {{ default "ClusterIP" $cfg.serviceType }}
+  selector:
+    app: {{ $svc.name }}
+  ports:
+    - name: http
+      port: {{ $cfg.port }}
+      targetPort: {{ $cfg.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svc.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "bankeros.labels" $ | nindent 4 }}
+    app: {{ $svc.name }}
+spec:
+  replicas: {{ default $svc.default_replicas $cfg.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $svc.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $svc.name }}
+        {{- include "bankeros.labels" $ | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ $svc.name }}
+          image: "{{ $.Values.global.image.registry }}/{{ $.Values.global.image.repository }}/{{ $svc.name }}:{{ $.Values.global.image.tag }}"
+          imagePullPolicy: {{ $.Values.global.image.pullPolicy }}
+          ports:
+            - containerPort: {{ $cfg.port }}
+          env:
+            - name: NODE_ENV
+              value: {{ $.Values.env.NODE_ENV | quote }}
+            - name: LOG_LEVEL
+              value: {{ $.Values.env.LOG_LEVEL | quote }}
+            - name: PORT
+              value: {{ $cfg.port | quote }}
+            - name: SERVICE_NAME
+              value: {{ $svc.name | quote }}
+            {{- if ne $svc.key "adminDashboard" }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.name }}
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.name }}
+                  key: redis-url
+                  optional: true
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.name }}
+                  key: jwt-secret
+            - name: KAFKA_BROKERS
+              value: "{{ $.Release.Name }}-kafka:9092"
+            {{- end }}
+            {{- if eq $svc.key "apiGateway" }}
+            - name: IAM_SERVICE_URL
+              value: http://iam-service:3001
+            - name: GL_SERVICE_URL
+              value: http://gl-service:3002
+            - name: ONBOARDING_SERVICE_URL
+              value: http://onboarding-service:3003
+            - name: LENDING_SERVICE_URL
+              value: http://lending-service:3004
+            - name: PAYMENTS_SERVICE_URL
+              value: http://payments-service:3005
+            - name: COMPLIANCE_SERVICE_URL
+              value: http://compliance-service:3006
+            - name: TRADE_FINANCE_SERVICE_URL
+              value: http://trade-finance-service:3007
+            - name: WEALTH_SERVICE_URL
+              value: http://wealth-service:3008
+            - name: LIQUIDITY_SERVICE_URL
+              value: http://liquidity-service:3009
+            - name: BATCH_SERVICE_URL
+              value: http://batch-service:3010
+            - name: MARKETS_SERVICE_URL
+              value: http://markets-service:3011
+            - name: PRODUCT_FACTORY_SERVICE_URL
+              value: http://product-factory-service:3012
+            - name: SYNDICATION_SERVICE_URL
+              value: http://syndication-service:3013
+            - name: CDP_SERVICE_URL
+              value: http://cdp-service:3014
+            - name: DIGITAL_ASSETS_SERVICE_URL
+              value: http://digital-assets-service:3015
+            - name: MIDDLE_OFFICE_SERVICE_URL
+              value: http://middle-office-service:3016
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ $cfg.port }}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ $cfg.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml (default $.Values.resources.default $cfg.resources) | nindent 12 }}
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+---
+{{- if and $cfg.autoscaling $cfg.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $svc.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "bankeros.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $svc.name }}
+  minReplicas: {{ $cfg.autoscaling.minReplicas }}
+  maxReplicas: {{ $cfg.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ default 70 $cfg.autoscaling.targetCPU }}
+{{- end }}
+{{- end }}
+{{- end }}

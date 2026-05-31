@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: bankeros
+    environment: production
+
+scrape_configs:
+  - job_name: 'bankeros-services'
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - api-gateway:3000
+          - iam-service:3001
+          - gl-service:3002
+          - onboarding-service:3003
+          - lending-service:3004
+          - payments-service:3005
+          - compliance-service:3006
+          - trade-finance-service:3007
+          - wealth-service:3008
+          - liquidity-service:3009
+          - batch-service:3010
+          - markets-service:3011
+          - product-factory-service:3012
+          - syndication-service:3013
+          - cdp-service:3014
+          - digital-assets-service:3015
+          - middle-office-service:3016
+        labels:
+          tier: application
+
+rule_files:
+  - '/etc/prometheus/rules/*.yml'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']

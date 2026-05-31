@@ -1,0 +1,738 @@
+/* ===================================================================
+ * BankerOS Public Portal & Customer Banking Styles
+ * Light theme — HSBC / 招行 inspired (clean, navy, professional)
+ * Scoped by .portal-root and .banking-root classes
+ * =================================================================== */
+
+.portal-root {
+  --p-navy: #002966;
+  --p-navy-dark: #001838;
+  --p-red: #db0011;       /* HSBC signature red */
+  --p-gold: #ffba00;      /* CMB-style gold accent */
+  --p-bg: #ffffff;
+  --p-bg-soft: #f7f9fc;
+  --p-bg-section: #f0f4f8;
+  --p-text: #1a1a1a;
+  --p-text-soft: #5a6470;
+  --p-text-muted: #8a94a0;
+  --p-border: #e4e7ec;
+  --p-border-soft: #f0f2f5;
+  --p-success: #007a33;
+  --p-warn: #d97706;
+  font-family: 'HSBC Sans', 'PingFang SC', 'Helvetica Neue', -apple-system, sans-serif;
+  background: var(--p-bg);
+  color: var(--p-text);
+  min-height: 100vh;
+}
+
+.portal-root * { box-sizing: border-box; }
+
+/* ── Top Navigation Bar ─────────────────────────────────────────── */
+.p-topbar {
+  background: var(--p-bg);
+  border-bottom: 1px solid var(--p-border);
+  height: 72px;
+  display: flex;
+  align-items: center;
+  padding: 0 48px;
+  gap: 32px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.p-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: var(--p-navy);
+}
+
+.p-logo-mark {
+  width: 38px;
+  height: 38px;
+  background: linear-gradient(135deg, var(--p-red), #a00010);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 900;
+  font-size: 20px;
+}
+
+.p-logo-text {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--p-navy);
+}
+
+.p-logo-sub {
+  font-size: 11px;
+  color: var(--p-text-muted);
+  display: block;
+  letter-spacing: 0.08em;
+}
+
+.p-nav {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.p-nav-item {
+  padding: 24px 18px;
+  color: var(--p-text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.p-nav-item:hover {
+  color: var(--p-red);
+}
+
+.p-nav-item.active {
+  color: var(--p-red);
+  border-bottom: 3px solid var(--p-red);
+}
+
+.p-topbar-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.p-lang {
+  color: var(--p-text-soft);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+.p-lang:hover { background: var(--p-bg-section); }
+
+.p-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+  border: none;
+}
+
+.p-btn-primary {
+  background: var(--p-red);
+  color: white;
+}
+.p-btn-primary:hover { background: #b00010; }
+
+.p-btn-secondary {
+  background: transparent;
+  color: var(--p-navy);
+  border: 1.5px solid var(--p-navy);
+}
+.p-btn-secondary:hover { background: var(--p-navy); color: white; }
+
+.p-btn-ghost {
+  background: transparent;
+  color: var(--p-text);
+  border: 1px solid var(--p-border);
+}
+.p-btn-ghost:hover { background: var(--p-bg-section); }
+
+/* ── Hero ──────────────────────────────────────────────────────── */
+.p-hero {
+  background: linear-gradient(135deg, var(--p-navy) 0%, var(--p-navy-dark) 100%);
+  color: white;
+  padding: 80px 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+.p-hero::before {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 400px; height: 100%;
+  background: radial-gradient(circle at 50% 50%, rgba(219,0,17,0.15), transparent 70%);
+  pointer-events: none;
+}
+
+.p-hero-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 64px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.p-hero-title {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 20px;
+  letter-spacing: -0.02em;
+}
+.p-hero-title .accent { color: #ffba00; }
+
+.p-hero-subtitle {
+  font-size: 18px;
+  line-height: 1.6;
+  margin-bottom: 32px;
+  opacity: 0.9;
+  max-width: 520px;
+}
+
+.p-hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.p-hero-card {
+  background: white;
+  color: var(--p-text);
+  border-radius: 8px;
+  padding: 32px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.p-hero-card h3 {
+  font-size: 16px;
+  color: var(--p-navy);
+  margin-bottom: 16px;
+  font-weight: 700;
+}
+
+/* ── Product Cards ─────────────────────────────────────────────── */
+.p-section {
+  padding: 72px 48px;
+}
+
+.p-section-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.p-section-header {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.p-section-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--p-red);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.p-section-title {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--p-navy);
+  margin-bottom: 12px;
+  letter-spacing: -0.02em;
+}
+
+.p-section-subtitle {
+  font-size: 16px;
+  color: var(--p-text-soft);
+  max-width: 640px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.p-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.p-product-card {
+  background: white;
+  border: 1px solid var(--p-border);
+  border-radius: 8px;
+  padding: 32px;
+  transition: all 0.25s;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--p-text);
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+
+.p-product-card:hover {
+  border-color: var(--p-red);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.08);
+}
+
+.p-product-icon {
+  width: 56px; height: 56px;
+  background: var(--p-bg-section);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: var(--p-red);
+  margin-bottom: 20px;
+}
+
+.p-product-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--p-navy);
+  margin-bottom: 8px;
+}
+
+.p-product-desc {
+  font-size: 14px;
+  color: var(--p-text-soft);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.p-product-link {
+  color: var(--p-red);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Trust strip ──────────────────────────────────────────────── */
+.p-trust-strip {
+  background: var(--p-bg-section);
+  padding: 36px 48px;
+  text-align: center;
+}
+
+.p-trust-row {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+}
+
+.p-trust-item {
+  text-align: center;
+}
+
+.p-trust-num {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--p-navy);
+  display: block;
+}
+
+.p-trust-label {
+  font-size: 13px;
+  color: var(--p-text-soft);
+  margin-top: 4px;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+.p-footer {
+  background: var(--p-navy-dark);
+  color: white;
+  padding: 48px;
+}
+
+.p-footer-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 48px;
+}
+
+.p-footer h4 {
+  font-size: 14px;
+  margin-bottom: 16px;
+  font-weight: 700;
+}
+
+.p-footer ul { list-style: none; padding: 0; margin: 0; }
+
+.p-footer li {
+  font-size: 13px;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 8px;
+}
+
+.p-footer a {
+  color: rgba(255,255,255,0.7);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.p-footer a:hover { color: white; }
+
+.p-footer-bottom {
+  max-width: 1280px;
+  margin: 36px auto 0;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Customer Banking Interface (logged-in)
+   ───────────────────────────────────────────────────────────────── */
+
+.banking-root {
+  --b-navy: #002966;
+  --b-navy-dark: #001838;
+  --b-red: #db0011;
+  --b-bg: #f0f4f8;
+  --b-bg-card: #ffffff;
+  --b-text: #1a1a1a;
+  --b-text-soft: #5a6470;
+  --b-text-muted: #8a94a0;
+  --b-border: #e4e7ec;
+  --b-success: #007a33;
+  --b-warn: #d97706;
+  font-family: 'HSBC Sans', 'PingFang SC', 'Helvetica Neue', -apple-system, sans-serif;
+  background: var(--b-bg);
+  color: var(--b-text);
+  min-height: 100vh;
+}
+
+.banking-root * { box-sizing: border-box; }
+
+.b-topbar {
+  background: var(--b-navy);
+  color: white;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 32px;
+  gap: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.b-topbar .p-logo-text { color: white; }
+.b-topbar .p-logo-sub { color: rgba(255,255,255,0.6); }
+
+.b-nav {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  margin-left: 24px;
+}
+
+.b-nav-item {
+  padding: 22px 18px;
+  color: rgba(255,255,255,0.85);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 3px solid transparent;
+  transition: all 0.15s;
+}
+
+.b-nav-item:hover { color: white; }
+.b-nav-item.active {
+  color: white;
+  border-bottom-color: white;
+}
+
+.b-topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+.b-topbar-account:hover { background: rgba(255,255,255,0.1); }
+
+.b-logout {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.3);
+  color: white;
+  padding: 7px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.b-logout:hover { background: rgba(255,255,255,0.1); }
+
+.b-content {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.b-page-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--b-navy);
+  margin-bottom: 4px;
+  letter-spacing: -0.02em;
+}
+
+.b-page-sub {
+  font-size: 14px;
+  color: var(--b-text-soft);
+  margin-bottom: 28px;
+}
+
+/* Cards */
+.b-card {
+  background: var(--b-bg-card);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  border: 1px solid var(--b-border);
+}
+
+.b-card-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--b-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.b-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--b-navy);
+}
+
+.b-card-body { padding: 24px; }
+
+.b-summary-card {
+  background: linear-gradient(135deg, var(--b-navy) 0%, var(--b-navy-dark) 100%);
+  color: white;
+  border-radius: 10px;
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+}
+
+.b-summary-card::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 200px; height: 200px;
+  background: radial-gradient(circle, rgba(255,186,0,0.15), transparent 70%);
+}
+
+.b-summary-label {
+  font-size: 12px;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.b-summary-value {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.b-summary-meta {
+  font-size: 13px;
+  margin-top: 12px;
+  opacity: 0.85;
+}
+
+/* Quick action grid */
+.b-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.b-quick-btn {
+  background: var(--b-bg-card);
+  border: 1px solid var(--b-border);
+  border-radius: 8px;
+  padding: 18px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--b-navy);
+  text-decoration: none;
+}
+
+.b-quick-btn:hover {
+  border-color: var(--b-red);
+  color: var(--b-red);
+  transform: translateY(-2px);
+}
+
+.b-quick-icon {
+  font-size: 24px;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.b-quick-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Tables */
+.b-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.b-table thead th {
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--b-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--b-border);
+  background: #fafbfc;
+}
+.b-table tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--b-border);
+}
+.b-table tbody tr:hover { background: #fafbfc; }
+.b-table tbody tr:last-child td { border-bottom: none; }
+
+.b-amount-pos { color: var(--b-success); font-weight: 600; }
+.b-amount-neg { color: var(--b-text); font-weight: 600; }
+
+.b-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.b-badge-success { background: rgba(0,122,51,0.1); color: var(--b-success); }
+.b-badge-warn    { background: rgba(217,119,6,0.1); color: var(--b-warn); }
+.b-badge-info    { background: rgba(0,41,102,0.1); color: var(--b-navy); }
+
+/* Form */
+.b-form-group { margin-bottom: 18px; }
+.b-form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--b-text-soft);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.b-form-input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--b-border);
+  border-radius: 4px;
+  background: white;
+  color: var(--b-text);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+.b-form-input:focus {
+  outline: none;
+  border-color: var(--b-navy);
+  box-shadow: 0 0 0 3px rgba(0,41,102,0.1);
+}
+
+.b-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+  font-family: inherit;
+}
+
+.b-btn-primary {
+  background: var(--b-red);
+  color: white;
+}
+.b-btn-primary:hover { background: #b00010; }
+
+.b-btn-ghost {
+  background: transparent;
+  color: var(--b-navy);
+  border: 1.5px solid var(--b-navy);
+}
+.b-btn-ghost:hover { background: var(--b-navy); color: white; }
+
+.b-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.b-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+
+/* Account card */
+.b-account-card {
+  border: 1px solid var(--b-border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: white;
+}
+.b-account-card:hover { border-color: var(--b-navy); }
+.b-account-card.active { border-color: var(--b-navy); background: rgba(0,41,102,0.02); }
+
+.b-account-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.b-account-type {
+  font-size: 11px;
+  color: var(--b-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.b-account-num {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  color: var(--b-text-soft);
+}
+
+.b-account-balance {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--b-navy);
+  text-align: right;
+  letter-spacing: -0.02em;
+}
+
+.b-account-currency {
+  font-size: 11px;
+  color: var(--b-text-muted);
+  text-align: right;
+  text-transform: uppercase;
+}

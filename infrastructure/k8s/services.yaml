@@ -1,0 +1,130 @@
+## BankerOS — Kubernetes Service Definitions
+## Each microservice gets a ClusterIP Service for internal routing,
+## only the API Gateway is exposed via LoadBalancer / Ingress.
+
+---
+# API Gateway — external entry point
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: bankeros
+  labels:
+    app: api-gateway
+    tier: gateway
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+  type: LoadBalancer
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: bankeros
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: ghcr.io/bankeros/bankeros/api-gateway:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: bankeros-secrets
+                  key: jwt-secret
+            - name: IAM_SERVICE_URL
+              value: http://iam-service:3001
+            - name: GL_SERVICE_URL
+              value: http://gl-service:3002
+            - name: ONBOARDING_SERVICE_URL
+              value: http://onboarding-service:3003
+            - name: LENDING_SERVICE_URL
+              value: http://lending-service:3004
+            - name: PAYMENTS_SERVICE_URL
+              value: http://payments-service:3005
+            - name: COMPLIANCE_SERVICE_URL
+              value: http://compliance-service:3006
+            - name: TRADE_FINANCE_SERVICE_URL
+              value: http://trade-finance-service:3007
+            - name: WEALTH_SERVICE_URL
+              value: http://wealth-service:3008
+            - name: LIQUIDITY_SERVICE_URL
+              value: http://liquidity-service:3009
+            - name: BATCH_SERVICE_URL
+              value: http://batch-service:3010
+            - name: MARKETS_SERVICE_URL
+              value: http://markets-service:3011
+            - name: PRODUCT_FACTORY_SERVICE_URL
+              value: http://product-factory-service:3012
+            - name: SYNDICATION_SERVICE_URL
+              value: http://syndication-service:3013
+            - name: CDP_SERVICE_URL
+              value: http://cdp-service:3014
+            - name: DIGITAL_ASSETS_SERVICE_URL
+              value: http://digital-assets-service:3015
+            - name: MIDDLE_OFFICE_SERVICE_URL
+              value: http://middle-office-service:3016
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+# Internal microservices — template repeated per service
+# Each follows: ClusterIP Service + Deployment with HPA
+{% for service, port in [
+  ['iam-service', 3001], ['gl-service', 3002],
+  ['onboarding-service', 3003], ['lending-service', 3004],
+  ['payments-service', 3005], ['compliance-service', 3006],
+  ['trade-finance-service', 3007], ['wealth-service', 3008],
+  ['liquidity-service', 3009], ['batch-service', 3010],
+  ['markets-service', 3011], ['product-factory-service', 3012],
+  ['syndication-service', 3013], ['cdp-service', 3014],
+  ['digital-assets-service', 3015], ['middle-office-service', 3016],
+] %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ service }}
+  namespace: bankeros
+spec:
+  selector:
+    app: {{ service }}
+  ports:
+    - port: {{ port }}
+      targetPort: {{ port }}
+  type: ClusterIP
+{% endfor %}

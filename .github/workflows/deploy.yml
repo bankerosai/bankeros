@@ -1,0 +1,45 @@
+name: BankerOS Deploy
+
+on:
+  workflow_run:
+    workflows: [BankerOS CI]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > ~/.kube/config
+
+      - name: Deploy all services via Helm
+        run: |
+          helm upgrade --install bankeros ./infrastructure/helm \
+            --namespace bankeros-staging \
+            --create-namespace \
+            --set global.image.tag=${{ github.sha }} \
+            --set global.environment=staging \
+            --wait --timeout 5m
+
+      - name: Run smoke tests
+        run: |
+          sleep 15
+          curl -f https://staging-api.bankeros.io/health || exit 1
+          echo "Smoke test passed"
+
+      - name: Notify on success
+        if: success()
+        run: echo "Deployed ${{ github.sha }} to staging successfully"
+
+      - name: Rollback on failure
+        if: failure()
+        run: helm rollback bankeros --namespace bankeros-staging

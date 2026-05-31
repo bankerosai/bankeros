@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Testing
+coverage/
+*.lcov
+.nyc_output/
+playwright-report/
+test-results/
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Database
+*.db
+*.sqlite
+prisma/migrations/dev/
+
+# Docker
+.docker/
+
+# Helm
+infrastructure/helm/charts/
+infrastructure/helm/Chart.lock
+
+# OS
+Thumbs.db
+
+# Generated
+openapi.json

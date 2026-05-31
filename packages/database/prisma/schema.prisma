@@ -1,0 +1,729 @@
+// ===== BankerOS Central Database Schema =====
+// Covers all 20 modules. Each service queries its own domain tables.
+// All monetary values stored as Decimal(28,8) — never FLOAT.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========== ENUM DEFINITIONS ==========
+
+enum CustomerType {
+  INDIVIDUAL
+  CORPORATE
+  TRUST
+  GOVERNMENT
+}
+
+enum KycStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  PROHIBITED
+}
+
+enum AccountType {
+  CURRENT
+  SAVINGS
+  LOAN
+  CREDIT_CARD
+  INVESTMENT
+  NOSTRO
+  VOSTRO
+  GL
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  DORMANT
+  FROZEN
+  CLOSED
+}
+
+enum TransactionType {
+  DEBIT
+  CREDIT
+}
+
+enum JournalEntryStatus {
+  PENDING
+  POSTED
+  REVERSED
+}
+
+enum LoanStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  ACTIVE
+  OVERDUE
+  WRITTEN_OFF
+  SETTLED
+}
+
+enum LoanType {
+  PERSONAL
+  MORTGAGE
+  SME
+  CORPORATE
+  SYNDICATED
+  TRADE_FINANCE
+}
+
+enum RepaymentFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+  BULLET
+}
+
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REVERSED
+  CANCELLED
+}
+
+enum PaymentNetwork {
+  INTERNAL
+  ACH
+  RTGS
+  SWIFT
+  SEPA
+  FASTER_PAYMENTS
+  CBDC
+}
+
+enum LcStatus {
+  DRAFT
+  APPLIED
+  ISSUED
+  ADVISED
+  AMENDED
+  PRESENTED
+  ACCEPTED
+  SETTLED
+  EXPIRED
+  CANCELLED
+}
+
+enum GuaranteeType {
+  BID_BOND
+  PERFORMANCE_BOND
+  ADVANCE_PAYMENT
+  FINANCIAL
+}
+
+enum ComplianceCaseStatus {
+  OPEN
+  UNDER_REVIEW
+  ESCALATED
+  CLOSED_SAR
+  CLOSED_NO_ACTION
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  COMPLIANCE_OFFICER
+  LOAN_OFFICER
+  TELLER
+  CUSTOMER_SERVICE
+  AUDITOR
+  API_SERVICE
+}
+
+enum BatchJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum PortfolioAssetClass {
+  EQUITY
+  FIXED_INCOME
+  MONEY_MARKET
+  ALTERNATIVE
+  REAL_ESTATE
+  COMMODITY
+}
+
+// ========== IDENTITY & ACCESS MANAGEMENT ==========
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  cifId        String?  @map("cif_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  mfaEnabled   Boolean  @default(false) @map("mfa_enabled")
+  mfaSecret    String?  @map("mfa_secret")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]     @relation("ActorLogs")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorId     String?  @map("actor_id")
+  actorType   String   @map("actor_type")   // USER | SYSTEM | API_KEY
+  action      String
+  resource    String
+  resourceId  String   @map("resource_id")
+  oldValues   Json?    @map("old_values")
+  newValues   Json?    @map("new_values")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  correlationId String? @map("correlation_id")
+  occurredAt  DateTime @default(now()) @map("occurred_at")
+
+  actor User? @relation("ActorLogs", fields: [actorId], references: [id])
+
+  @@index([resource, resourceId])
+  @@index([actorId])
+  @@index([occurredAt])
+  @@map("audit_logs")
+}
+
+// ========== CUSTOMER ONBOARDING & CIF ==========
+
+model Customer {
+  id            String       @id @default(uuid())
+  cifNumber     String       @unique @map("cif_number")
+  type          CustomerType
+  fullName      String       @map("full_name")
+  email         String       @unique
+  phone         String
+  dateOfBirth   DateTime?    @map("date_of_birth")
+  nationality   String?
+  taxId         String?      @map("tax_id")
+  addressLine1  String       @map("address_line1")
+  addressLine2  String?      @map("address_line2")
+  city          String
+  state         String?
+  postalCode    String       @map("postal_code")
+  country       String       // ISO 3166-1 alpha-2
+  kycStatus     KycStatus    @default(NOT_STARTED) @map("kyc_status")
+  riskLevel     RiskLevel    @default(MEDIUM) @map("risk_level")
+  pepFlag       Boolean      @default(false) @map("pep_flag")
+  sanctionsFlag Boolean      @default(false) @map("sanctions_flag")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  accounts         Account[]
+  loans            Loan[]
+  kycRecords       KycRecord[]
+  complianceCases  ComplianceCase[]
+  portfolios       Portfolio[]
+
+  @@index([email])
+  @@index([cifNumber])
+  @@map("customers")
+}
+
+model KycRecord {
+  id               String    @id @default(uuid())
+  customerId       String    @map("customer_id")
+  documentType     String    @map("document_type")   // PASSPORT | NATIONAL_ID | DRIVING_LICENSE
+  documentNumber   String    @map("document_number")
+  documentCountry  String    @map("document_country")
+  expiryDate       DateTime? @map("expiry_date")
+  frontImageId     String?   @map("front_image_id")
+  backImageId      String?   @map("back_image_id")
+  selfieImageId    String?   @map("selfie_image_id")
+  livenessScore    Decimal?  @map("liveness_score")  @db.Decimal(5, 4)
+  ocrData          Json?     @map("ocr_data")
+  verifiedAt       DateTime? @map("verified_at")
+  verifiedById     String?   @map("verified_by_id")
+  status           KycStatus @default(IN_PROGRESS)
+  rejectionReason  String?   @map("rejection_reason")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("kyc_records")
+}
+
+// ========== ACCOUNTS ==========
+
+model Account {
+  id               String        @id @default(uuid())
+  accountNumber    String        @unique @map("account_number")
+  customerId       String        @map("customer_id")
+  type             AccountType
+  status           AccountStatus @default(PENDING)
+  currency         String        // ISO 4217
+  balance          Decimal       @default(0) @db.Decimal(28, 8)
+  availableBalance Decimal       @default(0) @map("available_balance") @db.Decimal(28, 8)
+  holdAmount       Decimal       @default(0) @map("hold_amount") @db.Decimal(28, 8)
+  openedAt         DateTime      @default(now()) @map("opened_at")
+  closedAt         DateTime?     @map("closed_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  customer         Customer      @relation(fields: [customerId], references: [id])
+  transactions     AccountTransaction[]
+  debitPayments    Payment[]     @relation("DebtorAccount")
+
+  @@index([customerId])
+  @@index([accountNumber])
+  @@map("accounts")
+}
+
+model AccountTransaction {
+  id             String          @id @default(uuid())
+  accountId      String          @map("account_id")
+  type           TransactionType
+  amount         Decimal         @db.Decimal(28, 8)
+  currency       String
+  balanceBefore  Decimal         @map("balance_before") @db.Decimal(28, 8)
+  balanceAfter   Decimal         @map("balance_after") @db.Decimal(28, 8)
+  description    String?
+  referenceId    String?         @map("reference_id")
+  referenceType  String?         @map("reference_type")  // PAYMENT | LOAN | INTEREST | FEE
+  valueDate      DateTime        @map("value_date")
+  bookingDate    DateTime        @default(now()) @map("booking_date")
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, bookingDate])
+  @@index([referenceId])
+  @@map("account_transactions")
+}
+
+// ========== GENERAL LEDGER ==========
+
+model GlAccount {
+  id          String  @id @default(uuid())
+  code        String  @unique
+  name        String
+  type        String  // ASSET | LIABILITY | EQUITY | INCOME | EXPENSE
+  parentCode  String? @map("parent_code")
+  currency    String  @default("USD")
+  isActive    Boolean @default(true) @map("is_active")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  journalLines JournalLine[]
+
+  @@map("gl_accounts")
+}
+
+model JournalEntry {
+  id            String             @id @default(uuid())
+  referenceId   String             @map("reference_id")
+  referenceType String             @map("reference_type")
+  description   String?
+  status        JournalEntryStatus @default(PENDING)
+  businessDate  DateTime           @map("business_date")
+  postedAt      DateTime?          @map("posted_at")
+  reversedById  String?            @map("reversed_by_id")
+  createdById   String?            @map("created_by_id")
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  lines JournalLine[]
+
+  @@index([referenceId])
+  @@index([businessDate])
+  @@index([status])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String          @id @default(uuid())
+  journalEntryId String          @map("journal_entry_id")
+  glAccountCode  String          @map("gl_account_code")
+  type           TransactionType
+  amount         Decimal         @db.Decimal(28, 8)
+  currency       String
+  description    String?
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  glAccount    GlAccount    @relation(fields: [glAccountCode], references: [code])
+
+  @@map("journal_lines")
+}
+
+// ========== LENDING ==========
+
+model LoanProduct {
+  id                  String            @id @default(uuid())
+  code                String            @unique
+  name                String
+  type                LoanType
+  currency            String
+  minAmount           Decimal           @map("min_amount") @db.Decimal(28, 8)
+  maxAmount           Decimal           @map("max_amount") @db.Decimal(28, 8)
+  minTermMonths       Int               @map("min_term_months")
+  maxTermMonths       Int               @map("max_term_months")
+  nominalInterestRate Decimal           @map("nominal_interest_rate") @db.Decimal(8, 6)
+  penaltyRate         Decimal           @default(0) @map("penalty_rate") @db.Decimal(8, 6)
+  gracePeriodDays     Int               @default(0) @map("grace_period_days")
+  repaymentFrequency  RepaymentFrequency @map("repayment_frequency")
+  isActive            Boolean           @default(true) @map("is_active")
+  createdAt           DateTime          @default(now()) @map("created_at")
+
+  loans Loan[]
+
+  @@map("loan_products")
+}
+
+model Loan {
+  id                 String     @id @default(uuid())
+  loanNumber         String     @unique @map("loan_number")
+  customerId         String     @map("customer_id")
+  productId          String     @map("product_id")
+  accountId          String?    @map("account_id")
+  currency           String
+  principalAmount    Decimal    @map("principal_amount") @db.Decimal(28, 8)
+  outstandingBalance Decimal    @map("outstanding_balance") @db.Decimal(28, 8)
+  interestRate       Decimal    @map("interest_rate") @db.Decimal(8, 6)
+  termMonths         Int        @map("term_months")
+  status             LoanStatus @default(DRAFT)
+  disbursedAt        DateTime?  @map("disbursed_at")
+  maturityDate       DateTime?  @map("maturity_date")
+  nextDueDate        DateTime?  @map("next_due_date")
+  approvedById       String?    @map("approved_by_id")
+  approvedAt         DateTime?  @map("approved_at")
+  rejectionReason    String?    @map("rejection_reason")
+  notes              String?
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  product          LoanProduct       @relation(fields: [productId], references: [id])
+  repaymentSchedule LoanSchedule[]
+  transactions     LoanTransaction[]
+
+  @@index([customerId])
+  @@index([status])
+  @@map("loans")
+}
+
+model LoanSchedule {
+  id             String   @id @default(uuid())
+  loanId         String   @map("loan_id")
+  period         Int
+  dueDate        DateTime @map("due_date")
+  principalDue   Decimal  @map("principal_due") @db.Decimal(28, 8)
+  interestDue    Decimal  @map("interest_due") @db.Decimal(28, 8)
+  totalDue       Decimal  @map("total_due") @db.Decimal(28, 8)
+  paidAmount     Decimal  @default(0) @map("paid_amount") @db.Decimal(28, 8)
+  paidAt         DateTime? @map("paid_at")
+  isPaid         Boolean  @default(false) @map("is_paid")
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId, dueDate])
+  @@map("loan_schedules")
+}
+
+model LoanTransaction {
+  id              String   @id @default(uuid())
+  loanId          String   @map("loan_id")
+  type            String   // DISBURSEMENT | REPAYMENT | INTEREST_ACCRUAL | PENALTY | WRITE_OFF
+  amount          Decimal  @db.Decimal(28, 8)
+  principalPart   Decimal  @default(0) @map("principal_part") @db.Decimal(28, 8)
+  interestPart    Decimal  @default(0) @map("interest_part") @db.Decimal(28, 8)
+  penaltyPart     Decimal  @default(0) @map("penalty_part") @db.Decimal(28, 8)
+  transactionDate DateTime @map("transaction_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  loan Loan @relation(fields: [loanId], references: [id])
+
+  @@map("loan_transactions")
+}
+
+// ========== PAYMENTS ==========
+
+model Payment {
+  id                      String        @id @default(uuid())
+  paymentReference        String        @unique @map("payment_reference")
+  debtorAccountId         String        @map("debtor_account_id")
+  debtorName              String        @map("debtor_name")
+  creditorAccountNumber   String        @map("creditor_account_number")
+  creditorName            String        @map("creditor_name")
+  creditorBankBic         String?       @map("creditor_bank_bic")
+  creditorBankName        String?       @map("creditor_bank_name")
+  amount                  Decimal       @db.Decimal(28, 8)
+  currency                String
+  network                 PaymentNetwork
+  status                  PaymentStatus @default(INITIATED)
+  purposeCode             String?       @map("purpose_code")
+  remittanceInfo          String?       @map("remittance_info")
+  instructedAt            DateTime      @default(now()) @map("instructed_at")
+  completedAt             DateTime?     @map("completed_at")
+  failureReason           String?       @map("failure_reason")
+  fraudScore              Decimal?      @map("fraud_score") @db.Decimal(5, 4)
+  iso20022MsgId           String?       @map("iso20022_msg_id")
+  correlationId           String?       @map("correlation_id")
+
+  debtorAccount Account @relation("DebtorAccount", fields: [debtorAccountId], references: [id])
+
+  @@index([debtorAccountId])
+  @@index([status])
+  @@index([paymentReference])
+  @@map("payments")
+}
+
+// ========== TRADE FINANCE ==========
+
+model LetterOfCredit {
+  id               String   @id @default(uuid())
+  lcNumber         String   @unique @map("lc_number")
+  applicantCifId   String   @map("applicant_cif_id")
+  beneficiaryName  String   @map("beneficiary_name")
+  beneficiaryBank  String   @map("beneficiary_bank")
+  advisingBankBic  String?  @map("advising_bank_bic")
+  amount           Decimal  @db.Decimal(28, 8)
+  currency         String
+  expiryDate       DateTime @map("expiry_date")
+  expiryPlace      String   @map("expiry_place")
+  status           LcStatus @default(DRAFT)
+  goodsDescription String   @map("goods_description")
+  documentList     Json     @map("document_list")
+  portOfLoading    String?  @map("port_of_loading")
+  portOfDischarge  String?  @map("port_of_discharge")
+  swiftMsgRef      String?  @map("swift_msg_ref")
+  issuedAt         DateTime? @map("issued_at")
+  settledAt        DateTime? @map("settled_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  amendments LcAmendment[]
+
+  @@map("letters_of_credit")
+}
+
+model LcAmendment {
+  id          String   @id @default(uuid())
+  lcId        String   @map("lc_id")
+  amendNumber Int      @map("amend_number")
+  changes     Json
+  requestedAt DateTime @default(now()) @map("requested_at")
+  approvedAt  DateTime? @map("approved_at")
+  appliedAt   DateTime? @map("applied_at")
+
+  lc LetterOfCredit @relation(fields: [lcId], references: [id])
+
+  @@map("lc_amendments")
+}
+
+model BankGuarantee {
+  id               String        @id @default(uuid())
+  guaranteeNumber  String        @unique @map("guarantee_number")
+  applicantCifId   String        @map("applicant_cif_id")
+  beneficiaryName  String        @map("beneficiary_name")
+  type             GuaranteeType
+  amount           Decimal       @db.Decimal(28, 8)
+  currency         String
+  expiryDate       DateTime      @map("expiry_date")
+  issuedAt         DateTime?     @map("issued_at")
+  claimedAmount    Decimal       @default(0) @map("claimed_amount") @db.Decimal(28, 8)
+  isExpired        Boolean       @default(false) @map("is_expired")
+  terms            String
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  @@map("bank_guarantees")
+}
+
+// ========== COMPLIANCE & AML ==========
+
+model ComplianceCase {
+  id            String               @id @default(uuid())
+  caseNumber    String               @unique @map("case_number")
+  customerId    String?              @map("customer_id")
+  paymentId     String?              @map("payment_id")
+  type          String               // SAR | STR | PEP_REVIEW | SANCTIONS_HIT | EDD
+  status        ComplianceCaseStatus @default(OPEN)
+  riskScore     Decimal?             @map("risk_score") @db.Decimal(5, 4)
+  description   String
+  findings      Json?
+  assignedToId  String?              @map("assigned_to_id")
+  resolvedAt    DateTime?            @map("resolved_at")
+  resolution    String?
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([status])
+  @@index([customerId])
+  @@map("compliance_cases")
+}
+
+model SanctionsScreeningResult {
+  id            String   @id @default(uuid())
+  entityType    String   @map("entity_type")   // CUSTOMER | PAYMENT | COUNTERPARTY
+  entityId      String   @map("entity_id")
+  name          String
+  matchScore    Decimal  @map("match_score") @db.Decimal(5, 4)
+  listName      String   @map("list_name")     // OFAC | UN | EU | HMT
+  matchedEntry  Json?    @map("matched_entry")
+  isPep         Boolean  @default(false) @map("is_pep")
+  isMatch       Boolean  @default(false) @map("is_match")
+  screenedAt    DateTime @default(now()) @map("screened_at")
+
+  @@index([entityId, entityType])
+  @@map("sanctions_screening_results")
+}
+
+// ========== WEALTH MANAGEMENT ==========
+
+model Portfolio {
+  id          String   @id @default(uuid())
+  customerId  String   @map("customer_id")
+  name        String
+  currency    String
+  riskProfile String   @map("risk_profile")   // CONSERVATIVE | MODERATE | AGGRESSIVE
+  totalValue  Decimal  @default(0) @map("total_value") @db.Decimal(28, 8)
+  pnl         Decimal  @default(0) @db.Decimal(28, 8)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  customer Customer        @relation(fields: [customerId], references: [id])
+  holdings PortfolioHolding[]
+
+  @@map("portfolios")
+}
+
+model PortfolioHolding {
+  id           String              @id @default(uuid())
+  portfolioId  String              @map("portfolio_id")
+  assetClass   PortfolioAssetClass @map("asset_class")
+  symbol       String
+  name         String
+  quantity     Decimal             @db.Decimal(28, 8)
+  avgCostPrice Decimal             @map("avg_cost_price") @db.Decimal(28, 8)
+  currentPrice Decimal             @map("current_price") @db.Decimal(28, 8)
+  currency     String
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@map("portfolio_holdings")
+}
+
+// ========== LIQUIDITY & CASH MANAGEMENT ==========
+
+model CashPool {
+  id            String   @id @default(uuid())
+  name          String
+  masterAccountId String @map("master_account_id")
+  currency      String
+  isNotional    Boolean  @default(false) @map("is_notional")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  members CashPoolMember[]
+
+  @@map("cash_pools")
+}
+
+model CashPoolMember {
+  id            String   @id @default(uuid())
+  poolId        String   @map("pool_id")
+  accountId     String   @map("account_id")
+  targetBalance Decimal? @map("target_balance") @db.Decimal(28, 8)
+  minBalance    Decimal  @default(0) @map("min_balance") @db.Decimal(28, 8)
+  isActive      Boolean  @default(true) @map("is_active")
+
+  pool CashPool @relation(fields: [poolId], references: [id])
+
+  @@map("cash_pool_members")
+}
+
+// ========== BATCH PROCESSING ==========
+
+model BatchJob {
+  id            String         @id @default(uuid())
+  name          String
+  type          String         // EOD_INTEREST | EOD_REVALUATION | OVERDUE_CHECK | REPORT_GEN
+  businessDate  DateTime       @map("business_date")
+  status        BatchJobStatus @default(PENDING)
+  progress      Int            @default(0)
+  totalRecords  Int            @default(0) @map("total_records")
+  processedRecords Int         @default(0) @map("processed_records")
+  errorCount    Int            @default(0) @map("error_count")
+  startedAt     DateTime?      @map("started_at")
+  completedAt   DateTime?      @map("completed_at")
+  logs          String?
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  @@index([type, businessDate])
+  @@index([status])
+  @@map("batch_jobs")
+}
+
+// ========== FX RATES ==========
+
+model FxRate {
+  id           String   @id @default(uuid())
+  baseCurrency String   @map("base_currency")
+  quoteCurrency String  @map("quote_currency")
+  rate         Decimal  @db.Decimal(20, 10)
+  source       String   // ECB | REUTERS | INTERNAL
+  rateDate     DateTime @map("rate_date")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([baseCurrency, quoteCurrency, rateDate])
+  @@index([rateDate])
+  @@map("fx_rates")
+}
+
+// ========== DOCUMENTS ==========
+
+model Document {
+  id           String   @id @default(uuid())
+  fileName     String   @map("file_name")
+  contentType  String   @map("content_type")
+  sizeBytes    Int      @map("size_bytes")
+  storageKey   String   @map("storage_key")
+  checksum     String
+  entityType   String   @map("entity_type")  // CUSTOMER | LOAN | LC | GUARANTEE
+  entityId     String   @map("entity_id")
+  uploadedById String?  @map("uploaded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@map("documents")
+}
