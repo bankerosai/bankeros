@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { jwtVerify } from 'jose';
 import { prisma } from '@bankeros/database';
 import { failure, success } from '@bankeros/shared-utils';
 import { ALL_TOOLS, filterToolsForRole } from '@bankeros/mcp-bankeros';
@@ -27,17 +28,47 @@ const SendMessageSchema = z.object({
     .optional(),
 });
 
-function getUser(req: any): { userId: string; role: string; jwt: string } | null {
-  const userId = req.headers['x-user-id'];
-  const role = req.headers['x-user-role'];
+/**
+ * Resolve the caller identity.
+ *   - Production path: api-gateway has already verified the JWT and set
+ *     x-user-id / x-user-role headers.
+ *   - Dev path: front-end may call this service directly (via Vite proxy).
+ *     In that case we decode the Bearer JWT ourselves.
+ *   - Demo path: if COPILOT_ALLOW_ANON=true and no auth, we mock a SUPER_ADMIN
+ *     so chat works without the full stack. NEVER set this in production.
+ */
+async function getUser(
+  req: any,
+): Promise<{ userId: string; role: string; jwt: string } | null> {
+  let userId = req.headers['x-user-id'];
+  let role = req.headers['x-user-role'];
   const auth = req.headers['authorization'];
-  if (!userId || !role || typeof userId !== 'string' || typeof role !== 'string') {
-    return null;
+  const bearer =
+    typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7) : '';
+
+  // Fast path: gateway pre-populated headers
+  if (typeof userId === 'string' && typeof role === 'string' && userId && role) {
+    return { userId, role, jwt: bearer };
   }
-  const jwt = typeof auth === 'string' && auth.startsWith('Bearer ')
-    ? auth.slice(7)
-    : '';
-  return { userId, role, jwt };
+
+  // Self-verify the JWT
+  if (bearer) {
+    try {
+      const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'change_me');
+      const { payload } = await jwtVerify(bearer, secret);
+      userId = String(payload.sub ?? '');
+      role = String((payload as any).role ?? '');
+      if (userId && role) return { userId, role, jwt: bearer };
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // Demo / dev escape hatch
+  if (process.env.COPILOT_ALLOW_ANON === 'true') {
+    return { userId: 'demo-user', role: 'SUPER_ADMIN', jwt: bearer };
+  }
+  return null;
 }
 
 export async function copilotRoutes(app: FastifyInstance) {
@@ -51,7 +82,7 @@ export async function copilotRoutes(app: FastifyInstance) {
 
   /** List skills + commands available to the caller */
   app.get('/skills', async (req, reply) => {
-    const u = getUser(req);
+    const u = await getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
     const tools = filterToolsForRole(ALL_TOOLS, u.role).map((t: any) => ({
       name: t.name,
@@ -67,7 +98,7 @@ export async function copilotRoutes(app: FastifyInstance) {
 
   /** Open a new chat session */
   app.post('/sessions', async (req, reply) => {
-    const u = getUser(req);
+    const u = await getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
     const body = CreateSessionSchema.safeParse(req.body);
     if (!body.success) {
@@ -101,7 +132,7 @@ export async function copilotRoutes(app: FastifyInstance) {
 
   /** Send a message in an existing session */
   app.post('/sessions/:id/messages', async (req, reply) => {
-    const u = getUser(req);
+    const u = await getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
     const { id } = req.params as { id: string };
     const session = await prisma.copilotSession.findUnique({ where: { id } });
@@ -134,7 +165,7 @@ export async function copilotRoutes(app: FastifyInstance) {
 
   /** Read a session with its messages (for history view) */
   app.get('/sessions/:id', async (req, reply) => {
-    const u = getUser(req);
+    const u = await getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
     const { id } = req.params as { id: string };
     const session = await prisma.copilotSession.findUnique({
@@ -153,7 +184,7 @@ export async function copilotRoutes(app: FastifyInstance) {
 
   /** Read a single artefact (IC memo / KYC opinion / etc.) */
   app.get('/artefacts/:id', async (req, reply) => {
-    const u = getUser(req);
+    const u = await getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
     const { id } = req.params as { id: string };
     const a = await prisma.copilotArtefact.findUnique({
