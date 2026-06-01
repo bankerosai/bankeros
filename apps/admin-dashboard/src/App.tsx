@@ -4,6 +4,7 @@ import './styles-banking-v2.css';
 import './styles-portal-v2.css';
 import './styles-contrast-fix.css'; // must be last — overrides any leftover dark-on-dark / white-on-white
 import { applyTheme, getInitialTheme } from './components/ThemeToggle';
+import CopilotSidebar from './components/Copilot/CopilotSidebar';
 
 // Apply theme as early as possible to avoid flash of wrong theme
 applyTheme(getInitialTheme());
@@ -155,6 +156,7 @@ function AdminLayout({ children }: { children: React.ReactNode }) {
           <ErrorBoundary>{children}</ErrorBoundary>
         </div>
       </div>
+      <CopilotSidebar />
     </div>
   );
 }
@@ -162,7 +164,12 @@ function AdminLayout({ children }: { children: React.ReactNode }) {
 function CustomerRoute({ children }: { children: React.ReactNode }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated());
   if (!isAuth) return <Navigate to="/login" replace />;
-  return <ErrorBoundary>{children}</ErrorBoundary>;
+  return (
+    <>
+      <ErrorBoundary>{children}</ErrorBoundary>
+      <CopilotSidebar />
+    </>
+  );
 }
 
 export default function App() {

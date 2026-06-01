@@ -357,6 +357,25 @@ services:
       postgres:
         condition: service_healthy
 
+  banker-copilot-service:
+    build:
+      context: ./apps/banker-copilot-service
+      dockerfile: Dockerfile
+    container_name: bankeros-banker-copilot
+    restart: unless-stopped
+    ports:
+      - "3017:3017"
+    environment:
+      NODE_ENV: production
+      PORT: 3017
+      DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
+      BANKEROS_API_BASE: http://api-gateway:3000
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COPILOT_MODEL: ${COPILOT_MODEL:-claude-sonnet-4-5}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   admin-dashboard:
     build:
       context: ./apps/admin-dashboard

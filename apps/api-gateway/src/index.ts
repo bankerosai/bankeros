@@ -31,6 +31,7 @@ const SERVICES = {
   cdp:            process.env.CDP_SERVICE_URL               || 'http://localhost:3014',
   digitalAssets:  process.env.DIGITAL_ASSETS_SERVICE_URL   || 'http://localhost:3015',
   middleOffice:   process.env.MIDDLE_OFFICE_SERVICE_URL     || 'http://localhost:3016',
+  bankerCopilot:  process.env.BANKER_COPILOT_SERVICE_URL    || 'http://localhost:3017',
 };
 
 // Public routes that don't require JWT validation at the gateway level
@@ -105,6 +106,9 @@ async function main() {
   await app.register(httpProxy, { upstream: SERVICES.digitalAssets,  prefix: '/v1/digital-assets',         http2: false });
   await app.register(httpProxy, { upstream: SERVICES.middleOffice,   prefix: '/v1/middle-office',          http2: false });
   await app.register(httpProxy, { upstream: SERVICES.middleOffice,   prefix: '/v1/documents',              http2: false });
+
+  // Banker Copilot — Claude-powered banker assistant
+  await app.register(httpProxy, { upstream: SERVICES.bankerCopilot,   prefix: '/v1/copilot',                http2: false });
 
   // Open Banking routes (Module 13 / 17)
   await app.register(httpProxy, { upstream: SERVICES.onboarding,     prefix: '/open-banking/v3.1/aisp',   http2: false });
