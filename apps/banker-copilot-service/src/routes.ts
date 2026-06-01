@@ -53,7 +53,7 @@ export async function copilotRoutes(app: FastifyInstance) {
   app.get('/skills', async (req, reply) => {
     const u = getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
-    const tools = filterToolsForRole(ALL_TOOLS, u.role).map((t) => ({
+    const tools = filterToolsForRole(ALL_TOOLS, u.role).map((t: any) => ({
       name: t.name,
       description: t.description,
     }));

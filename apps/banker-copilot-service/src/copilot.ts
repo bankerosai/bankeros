@@ -1,13 +1,11 @@
 /**
- * Copilot turn orchestrator — drives one round of Claude conversation
- * including tool-use loop. Persists session messages + final artefacts.
+ * Copilot turn orchestrator — provider-agnostic.
+ * Drives one round of conversation including the tool-use loop.
+ * Persists session messages + final artefacts.
  *
- * Anthropic SDK best practices applied:
- *   · Prompt caching on the large STATIC_IDENTITY system block
- *   · Tool-use loop continues until model returns a stop_reason of "end_turn"
- *   · Token + cost accounting persisted on the CopilotSession row
+ *   getProvider() picks Anthropic (default) or OpenRouter from env.
+ *   The orchestrator never touches provider-specific SDK shapes.
  */
-import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '@bankeros/database';
 import {
   ALL_TOOLS,
@@ -18,23 +16,21 @@ import {
 } from '@bankeros/mcp-bankeros';
 import { buildSystemPrompt, PromptContext } from './system-prompt';
 import { findCommand, type CommandFile, type SkillFile } from './skill-loader';
+import {
+  getProvider,
+  getDefaultModel,
+  type ChatMessage,
+  type ChatToolCall,
+} from './providers';
 
-// Sonnet 4.5 — current production model for production-quality drafting.
-// Override via env if needed.
-const MODEL = process.env.COPILOT_MODEL || 'claude-sonnet-4-5';
 const MAX_TOKENS = parseInt(process.env.COPILOT_MAX_TOKENS || '4096');
-// Tool-use loop bound — protects against runaway tool churn.
 const MAX_TOOL_ROUNDS = parseInt(process.env.COPILOT_MAX_TOOL_ROUNDS || '8');
 
-// Per-1M-token pricing (Sonnet 4.5 as of 2026-06). Used for session cost accounting.
+// Per-1M-token prices. Defaults match Sonnet 4.5; override per-provider as needed.
 const PRICE_INPUT_PER_MTOK = parseFloat(process.env.COPILOT_PRICE_INPUT || '3');
 const PRICE_OUTPUT_PER_MTOK = parseFloat(process.env.COPILOT_PRICE_OUTPUT || '15');
 const PRICE_CACHE_READ_PER_MTOK = parseFloat(process.env.COPILOT_PRICE_CACHE_READ || '0.3');
 const PRICE_CACHE_WRITE_PER_MTOK = parseFloat(process.env.COPILOT_PRICE_CACHE_WRITE || '3.75');
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
 
 export interface RunTurnInput {
   sessionId: string;
@@ -53,20 +49,45 @@ export interface RunTurnOutput {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   costUsd: number;
-  artefact?: {
-    id: string;
-    skill: string;
-    subject: string;
-  };
+  provider: string;
+  artefact?: { id: string; skill: string; subject: string };
 }
 
-function computeCost(usage: Anthropic.Messages.Usage): number {
+function computeCost(usage: {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}): number {
   return (
-    (usage.input_tokens / 1_000_000) * PRICE_INPUT_PER_MTOK +
-    (usage.output_tokens / 1_000_000) * PRICE_OUTPUT_PER_MTOK +
-    ((usage.cache_read_input_tokens ?? 0) / 1_000_000) * PRICE_CACHE_READ_PER_MTOK +
-    ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) * PRICE_CACHE_WRITE_PER_MTOK
+    (usage.inputTokens / 1_000_000) * PRICE_INPUT_PER_MTOK +
+    (usage.outputTokens / 1_000_000) * PRICE_OUTPUT_PER_MTOK +
+    (usage.cacheReadTokens / 1_000_000) * PRICE_CACHE_READ_PER_MTOK +
+    (usage.cacheWriteTokens / 1_000_000) * PRICE_CACHE_WRITE_PER_MTOK
   );
+}
+
+/** Convert persisted DB messages into the provider-agnostic ChatMessage shape. */
+async function loadHistory(sessionId: string): Promise<ChatMessage[]> {
+  const rows = await prisma.copilotMessage.findMany({
+    where: { sessionId },
+    orderBy: { createdAt: 'asc' },
+    take: 40,
+  });
+  const out: ChatMessage[] = [];
+  for (const r of rows) {
+    if (r.role === 'USER') {
+      out.push({ role: 'user', content: r.content });
+    } else if (r.role === 'ASSISTANT') {
+      // Pending tool calls (if any) are stored in toolCalls JSON
+      const tc = (r.toolCalls as any)?.toolCalls as ChatToolCall[] | undefined;
+      out.push({ role: 'assistant', content: r.content, toolCalls: tc });
+    } else if (r.role === 'TOOL') {
+      const toolCallId = (r.toolCalls as any)?.tool_use_id as string | undefined;
+      out.push({ role: 'tool', content: r.content, toolCallId });
+    }
+  }
+  return out;
 }
 
 export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
@@ -77,7 +98,7 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
   let activeSkill = promptCtx.activeSkill;
   const slash = findCommand(commands, userMessage);
   if (slash) {
-    const skillName = slash.cmd.name.replace(/^fx-hedge$/, 'fx-hedging-advisor');
+    const skillName = slash.cmd.name === 'fx-hedge' ? 'fx-hedging-advisor' : slash.cmd.name;
     activeSkill = skills.find((s) => s.name === skillName) ?? activeSkill;
     effectiveUserMessage = [
       `User invoked slash command: /${slash.cmd.name}`,
@@ -91,8 +112,14 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
   }
 
   // Filter tools to those permitted for this role
-  const tools = filterToolsForRole(ALL_TOOLS, promptCtx.role);
-  const toolSchemas = tools.map(toAnthropicSchema);
+  const tools = filterToolsForRole(ALL_TOOLS, promptCtx.role).map((t: any) => {
+    const schema = toAnthropicSchema(t);
+    return {
+      name: schema.name,
+      description: schema.description,
+      parameters: schema.input_schema as Record<string, unknown>,
+    };
+  });
   const fullToolCtx: ToolContext = {
     ...toolCtx,
     role: promptCtx.role,
@@ -101,46 +128,23 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
 
   // Persist the inbound user message
   await prisma.copilotMessage.create({
-    data: {
-      sessionId,
-      role: 'USER',
-      content: userMessage,
-      tokens: 0,
-    },
+    data: { sessionId, role: 'USER', content: userMessage, tokens: 0 },
   });
 
-  // Build the messages array — load prior history for this session
-  const history = await prisma.copilotMessage.findMany({
-    where: { sessionId },
-    orderBy: { createdAt: 'asc' },
-    take: 40, // bounded — older turns will fall off (acceptable for P1)
-  });
-  const messages: Anthropic.MessageParam[] = history
-    .filter((m) => m.role !== 'SYSTEM')
-    .map((m) => {
-      if (m.role === 'USER') return { role: 'user', content: m.content };
-      if (m.role === 'ASSISTANT') return { role: 'assistant', content: m.content };
-      // TOOL rows: encode as a tool_result user message
-      return {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result' as const,
-            tool_use_id: ((m.toolCalls as any)?.tool_use_id as string) ?? '',
-            content: m.content,
-          },
-        ],
-      };
-    });
-  // Replace the most recent user entry with the (possibly expanded) effective message
+  // Build initial messages array from history; replace the most recent USER turn
+  // with the (possibly expanded) effective message.
+  const messages = await loadHistory(sessionId);
   if (messages.length && messages[messages.length - 1].role === 'user') {
     messages[messages.length - 1] = { role: 'user', content: effectiveUserMessage };
   }
 
-  const { text: dynamicSystem, cached: cachedSystem } = buildSystemPrompt({
+  const { text: systemDynamic, cached: systemStatic } = buildSystemPrompt({
     ...promptCtx,
     activeSkill,
   });
+
+  const provider = getProvider();
+  const model = getDefaultModel(provider);
 
   let totalIn = 0;
   let totalOut = 0;
@@ -149,79 +153,65 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
   let toolCallCount = 0;
   let finalText = '';
 
-  // Tool-use loop
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: [
-        { type: 'text', text: cachedSystem, cache_control: { type: 'ephemeral' } },
-        { type: 'text', text: dynamicSystem },
-      ],
-      tools: toolSchemas as any,
+    const r = await provider.generate({
+      model,
+      maxTokens: MAX_TOKENS,
+      systemStatic,
+      systemDynamic,
       messages,
+      tools,
     });
 
-    totalIn += response.usage.input_tokens;
-    totalOut += response.usage.output_tokens;
-    totalCacheRead += response.usage.cache_read_input_tokens ?? 0;
-    totalCacheWrite += response.usage.cache_creation_input_tokens ?? 0;
+    totalIn += r.usage.inputTokens;
+    totalOut += r.usage.outputTokens;
+    totalCacheRead += r.usage.cacheReadTokens;
+    totalCacheWrite += r.usage.cacheWriteTokens;
 
-    // Collect text + tool_use blocks
-    const textBlocks = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n');
-    if (textBlocks) finalText = textBlocks;
+    if (r.text) finalText = r.text;
 
-    if (response.stop_reason !== 'tool_use') {
-      // Done
+    if (r.stopReason !== 'tool_use' || r.toolCalls.length === 0) {
       break;
     }
 
-    // Append assistant message (must contain the tool_use blocks Claude returned)
-    messages.push({ role: 'assistant', content: response.content });
+    // Append the assistant turn (text + pending tool_calls) to history + messages
+    messages.push({ role: 'assistant', content: r.text, toolCalls: r.toolCalls });
+    await prisma.copilotMessage.create({
+      data: {
+        sessionId,
+        role: 'ASSISTANT',
+        content: r.text,
+        toolCalls: { toolCalls: r.toolCalls },
+        tokens: r.usage.outputTokens,
+      },
+    });
 
-    // Execute every requested tool
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const block of response.content) {
-      if (block.type !== 'tool_use') continue;
+    // Execute each tool the model requested
+    for (const tc of r.toolCalls) {
       toolCallCount += 1;
-      const exec = await executeTool(ALL_TOOLS, block.name, block.input, fullToolCtx);
+      const exec = await executeTool(ALL_TOOLS, tc.name, tc.arguments, fullToolCtx);
       const content = exec.ok
         ? JSON.stringify(exec.result).slice(0, 16000)
         : `ERROR: ${exec.error}`;
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: block.id,
-        content,
-        is_error: !exec.ok,
-      });
-      // Persist tool call for audit
+      messages.push({ role: 'tool', content, toolCallId: tc.id });
       await prisma.copilotMessage.create({
         data: {
           sessionId,
           role: 'TOOL',
           content,
-          toolCalls: { name: block.name, input: block.input, tool_use_id: block.id, ok: exec.ok },
+          toolCalls: { name: tc.name, input: tc.arguments, tool_use_id: tc.id, ok: exec.ok },
           tokens: 0,
         },
       });
     }
-    messages.push({ role: 'user', content: toolResults });
   }
 
   // Persist final assistant message
   await prisma.copilotMessage.create({
-    data: {
-      sessionId,
-      role: 'ASSISTANT',
-      content: finalText,
-      tokens: totalOut,
-    },
+    data: { sessionId, role: 'ASSISTANT', content: finalText, tokens: totalOut },
   });
 
-  // If a slash command produced a substantial artefact, save it
+  // Save substantial slash-command outputs as artefacts
   let artefact: RunTurnOutput['artefact'];
   if (slash && finalText.length > 400) {
     const a = await prisma.copilotArtefact.create({
@@ -236,12 +226,11 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
     artefact = { id: a.id, skill: a.skill, subject: a.subject };
   }
 
-  // Update session totals
   const cost = computeCost({
-    input_tokens: totalIn,
-    output_tokens: totalOut,
-    cache_read_input_tokens: totalCacheRead,
-    cache_creation_input_tokens: totalCacheWrite,
+    inputTokens: totalIn,
+    outputTokens: totalOut,
+    cacheReadTokens: totalCacheRead,
+    cacheWriteTokens: totalCacheWrite,
   });
   await prisma.copilotSession.update({
     where: { id: sessionId },
@@ -259,6 +248,7 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
     cacheReadTokens: totalCacheRead,
     cacheWriteTokens: totalCacheWrite,
     costUsd: cost,
+    provider: provider.name,
     artefact,
   };
 }

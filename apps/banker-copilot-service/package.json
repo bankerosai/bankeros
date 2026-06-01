@@ -9,7 +9,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.1",
+    "@anthropic-ai/sdk": "^0.40.1",
+    "openai": "^4.67.0",
     "@bankeros/database": "workspace:*",
     "@bankeros/mcp-bankeros": "workspace:*",
     "@bankeros/shared-types": "workspace:*",

@@ -370,8 +370,12 @@ services:
       PORT: 3017
       DATABASE_URL: postgresql://bankeros:bankeros_secret@postgres:5432/bankeros_core
       BANKEROS_API_BASE: http://api-gateway:3000
+      COPILOT_PROVIDER: ${COPILOT_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      COPILOT_MODEL: ${COPILOT_MODEL:-claude-sonnet-4-5}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_REFERER: ${OPENROUTER_REFERER:-https://github.com/bankerosai/bankeros}
+      COPILOT_MODEL: ${COPILOT_MODEL:-}
     depends_on:
       postgres:
         condition: service_healthy
