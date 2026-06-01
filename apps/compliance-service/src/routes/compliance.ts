@@ -181,4 +181,61 @@ export async function complianceRoutes(app: FastifyInstance) {
     if (!complianceCase) return reply.status(404).send(failure('NOT_FOUND', 'Compliance case not found'));
     return reply.send(success(complianceCase));
   });
+
+  // ────────────────────────────────────────────────────────────
+  // Banker Copilot read-only — credit rating + exposure projections.
+  // Both routes are mounted under /v1/risk via index.ts prefix.
+  // ────────────────────────────────────────────────────────────
+  app.get('/credit-rating/:cif', async (request, reply) => {
+    const { cif } = request.params as { cif: string };
+    const c = await prisma.customer.findFirst({
+      where: { OR: [{ cifNumber: cif }, { id: cif }] },
+    });
+    if (!c) return reply.status(404).send(failure('NOT_FOUND', `No customer ${cif}`));
+    const score = c.riskScore ?? 50;
+    const rating = score >= 80 ? 'AA-' : score >= 60 ? 'A' : score >= 40 ? 'BBB+' : 'BB';
+    // Coarse IRB approximation — production banks derive these from rating
+    // models with model-validation governance. This is a demo projection.
+    const pd =
+      score >= 80 ? 0.0024 : score >= 60 ? 0.0048 : score >= 40 ? 0.0084 : 0.0200;
+    return reply.send(
+      success({
+        cif: c.cifNumber,
+        internalRating: rating,
+        ratingScale: 'INTERNAL_18_NOTCH',
+        ratingDate: c.updatedAt.toISOString().slice(0, 10),
+        irb: { pd, lgd: 0.45, ead: { currency: 'CNY', amount: 0 } },
+        ifrs9Stage: score >= 40 ? 'STAGE_1' : 'STAGE_2',
+        watchList: score < 40,
+        sourceScore: score,
+      }),
+    );
+  });
+
+  app.get('/exposure/:cif', async (request, reply) => {
+    const { cif } = request.params as { cif: string };
+    const c = await prisma.customer.findFirst({
+      where: { OR: [{ cifNumber: cif }, { id: cif }] },
+      include: {
+        loans: { where: { status: { in: ['DISBURSED', 'ACTIVE'] } } },
+      },
+    });
+    if (!c) return reply.status(404).send(failure('NOT_FOUND', `No customer ${cif}`));
+    const totalOutstanding = c.loans.reduce(
+      (sum, l) => sum + Number(l.outstandingPrincipal ?? l.principal ?? 0),
+      0,
+    );
+    const totalLimit = c.loans.reduce((sum, l) => sum + Number(l.principal ?? 0), 0);
+    return reply.send(
+      success({
+        cif: c.cifNumber,
+        asOf: new Date().toISOString().slice(0, 10),
+        totalOutstanding: { currency: 'CNY', amount: totalOutstanding },
+        totalLimit: { currency: 'CNY', amount: totalLimit },
+        utilisation: totalLimit > 0 ? totalOutstanding / totalLimit : 0,
+        loanCount: c.loans.length,
+        groupRollupApplied: false,
+      }),
+    );
+  });
 }

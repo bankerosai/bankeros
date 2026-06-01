@@ -191,4 +191,56 @@ export async function customerRoutes(app: FastifyInstance) {
       accountHolder: account.customer.fullName,
     }));
   });
+
+  // ────────────────────────────────────────────────────────────
+  // Banker Copilot read-only endpoints — minimal projections of
+  // customer + KYC suitable for Copilot synthesis. Auth handled by
+  // the api-gateway; this handler trusts x-user-* headers.
+  // ────────────────────────────────────────────────────────────
+  app.get('/customers/:cif', async (request, reply) => {
+    const { cif } = request.params as { cif: string };
+    const c = await prisma.customer.findFirst({
+      where: { OR: [{ cifNumber: cif }, { id: cif }] },
+      include: { addresses: { take: 1 } },
+    });
+    if (!c) return reply.status(404).send(failure('NOT_FOUND', `No customer ${cif}`));
+    return reply.send(
+      success({
+        cif: c.cifNumber,
+        legalName: c.fullName,
+        type: c.type,
+        segment: (c.riskScore ?? 0) > 70 ? 'CORPORATE' : 'SME',
+        jurisdiction: c.addresses?.[0]?.country ?? c.nationality ?? null,
+        city: c.addresses?.[0]?.city ?? null,
+        onboardedDate: c.createdAt.toISOString().slice(0, 10),
+        kycStatus: c.kycStatus,
+        email: c.email,
+        phone: c.phone,
+      }),
+    );
+  });
+
+  app.get('/onboarding/kyc/:cif', async (request, reply) => {
+    const { cif } = request.params as { cif: string };
+    const c = await prisma.customer.findFirst({
+      where: { OR: [{ cifNumber: cif }, { id: cif }] },
+      include: { kycRecords: { orderBy: { reviewedAt: 'desc' }, take: 5 } },
+    });
+    if (!c) return reply.status(404).send(failure('NOT_FOUND', `No customer ${cif}`));
+    return reply.send(
+      success({
+        cif: c.cifNumber,
+        kycStatus: c.kycStatus,
+        riskClassification:
+          (c.riskScore ?? 0) > 70 ? 'HIGH' : (c.riskScore ?? 0) > 40 ? 'MEDIUM' : 'LOW',
+        lastReviewDate: c.kycRecords?.[0]?.reviewedAt ?? null,
+        sanctionsScreen: { hit: false, lastScreened: new Date().toISOString() },
+        history: c.kycRecords.map((k) => ({
+          status: k.status,
+          reviewedAt: k.reviewedAt,
+          reason: k.notes,
+        })),
+      }),
+    );
+  });
 }

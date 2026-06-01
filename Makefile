@@ -5,6 +5,7 @@
 .PHONY: docker-build docker-up docker-down docker-logs
 .PHONY: helm-install helm-upgrade helm-uninstall
 .PHONY: e2e openapi typecheck
+.PHONY: demo-up demo-down demo-test copilot-up copilot-real
 
 # Default target — show help
 help:
@@ -184,3 +185,53 @@ clean:
 
 prisma-format:
 	pnpm --filter @bankeros/database exec prisma format
+
+# ───────────────────────────────────────────────────────────────────────────
+# Banker Copilot — quick demo paths
+# ───────────────────────────────────────────────────────────────────────────
+
+# Bring up just enough to demo Copilot with REAL HTTP tools (no Postgres):
+# 1) start demo-backend on :3000 (fixture-backed)
+# 2) hint user how to point Vite at it
+demo-up:
+	@echo "→ starting demo-backend on :3000 (fixtures, no Postgres needed)..."
+	cd apps/demo-backend && npx tsx src/index.ts &
+	@echo ""
+	@echo "Set in your .env:"
+	@echo "  COPILOT_TOOL_BACKEND=http"
+	@echo "  BANKEROS_API_BASE=http://localhost:3000"
+	@echo ""
+	@echo "Then start the dashboard:"
+	@echo "  make dev-dashboard"
+
+demo-down:
+	@pkill -f "tsx src/index.ts" 2>/dev/null || true
+	@echo "demo-backend stopped"
+
+demo-test:
+	@echo "→ probing demo-backend health..."
+	@curl -s http://localhost:3000/health | head -c 400 && echo
+	@echo ""
+	@echo "→ probing customer fixture..."
+	@curl -s http://localhost:3000/v1/customers/CIF-884109 | head -c 300 && echo
+
+# Full real path: postgres + migrate + seed + 3 minimum services + admin-dashboard.
+# Requires Docker Desktop running.
+copilot-real:
+	@echo "→ Starting postgres..."
+	docker compose up -d postgres
+	@sleep 3
+	@echo "→ Generating Prisma client + applying migrations + seeding..."
+	$(MAKE) db-migrate
+	$(MAKE) db-seed
+	@echo "→ Set COPILOT_TOOL_BACKEND=http in .env, then start needed services:"
+	@echo "  pnpm --filter @bankeros/api-gateway dev &"
+	@echo "  pnpm --filter @bankeros/onboarding-service dev &"
+	@echo "  pnpm --filter @bankeros/compliance-service dev &"
+	@echo "  pnpm --filter @bankeros/lending-service dev &"
+	@echo "  pnpm --filter @bankeros/admin-dashboard dev"
+
+# Same as `dev-dashboard` but also enforces the env recipe Copilot needs locally
+copilot-up:
+	COPILOT_TOOL_BACKEND=http BANKEROS_API_BASE=http://localhost:3000 \
+		pnpm --filter @bankeros/admin-dashboard dev

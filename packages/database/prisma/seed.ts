@@ -97,6 +97,71 @@ async function main() {
     },
   });
 
+  // ---- Demo customers used by Banker Copilot tools ----
+  // These CIFs match the IDs in apps/demo-backend/src/fixtures.ts so a
+  // banker can ask Copilot about CIF-884109 either through the real
+  // Prisma-backed services OR via the standalone demo-backend.
+  const demoCustomers = [
+    {
+      cifNumber: 'CIF-884109',
+      fullName: '浙江华盾包装有限公司',
+      email: 'finance@huadun.example.cn',
+      phone: '+86-571-8800-1024',
+      type: 'CORPORATE' as const,
+      nationality: 'CN',
+      kycStatus: 'APPROVED' as const,
+      riskScore: 35, // LOW
+    },
+    {
+      cifNumber: 'CIF-220184',
+      fullName: '上海钢联材料股份有限公司',
+      email: 'treasury@gangliansh.example.cn',
+      phone: '+86-21-6420-0184',
+      type: 'CORPORATE' as const,
+      nationality: 'CN',
+      kycStatus: 'APPROVED' as const,
+      riskScore: 55, // MEDIUM
+    },
+    {
+      cifNumber: 'CIF-330042',
+      fullName: '招商局港口控股有限公司',
+      email: 'group.treasury@cmport.example.hk',
+      phone: '+852-2820-0042',
+      type: 'CORPORATE' as const,
+      nationality: 'HK',
+      kycStatus: 'APPROVED' as const,
+      riskScore: 82, // HIGH (group customer = enhanced due diligence)
+    },
+    {
+      cifNumber: 'CIF-440022',
+      fullName: '深圳易达供应链有限公司',
+      email: 'ar@yidasc.example.cn',
+      phone: '+86-755-8888-0022',
+      type: 'CORPORATE' as const,
+      nationality: 'CN',
+      kycStatus: 'APPROVED' as const,
+      riskScore: 42,
+    },
+    {
+      cifNumber: 'CIF-550088',
+      fullName: '广东智造科技股份有限公司',
+      email: 'finance@gdzhizao.example.cn',
+      phone: '+86-755-8800-5588',
+      type: 'CORPORATE' as const,
+      nationality: 'CN',
+      kycStatus: 'APPROVED' as const,
+      riskScore: 65,
+    },
+  ];
+  for (const c of demoCustomers) {
+    await prisma.customer.upsert({
+      where: { cifNumber: c.cifNumber },
+      update: { fullName: c.fullName, kycStatus: c.kycStatus, riskScore: c.riskScore },
+      create: c,
+    });
+  }
+  console.log(`Seeded ${demoCustomers.length} demo customers for Copilot.`);
+
   console.log('Seed completed successfully.');
 }
 

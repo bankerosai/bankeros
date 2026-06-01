@@ -357,6 +357,22 @@ services:
       postgres:
         condition: service_healthy
 
+  # Standalone Copilot demo-backend — fast path for trying COPILOT_TOOL_BACKEND=http
+  # without bringing the full 17-service stack up. Exposes only the 5 GET
+  # endpoints Copilot needs, served from in-memory fixtures.
+  demo-backend:
+    build:
+      context: ./apps/demo-backend
+      dockerfile: Dockerfile
+    container_name: bankeros-demo-backend
+    profiles: ['demo']
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+
   banker-copilot-service:
     build:
       context: ./apps/banker-copilot-service

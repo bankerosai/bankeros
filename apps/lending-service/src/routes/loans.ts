@@ -116,4 +116,34 @@ export async function loanRoutes(app: FastifyInstance) {
     const products = await prisma.loanProduct.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
     return reply.send(success(products));
   });
+
+  // ────────────────────────────────────────────────────────────
+  // Banker Copilot read-only — loan application by ID.
+  // Looks up by Loan.id; demo seed assigns external refs APP-2026-NNNN.
+  // ────────────────────────────────────────────────────────────
+  app.get('/applications/:applicationId', async (request, reply) => {
+    const { applicationId } = request.params as { applicationId: string };
+    const loan = await prisma.loan.findFirst({
+      where: { OR: [{ id: applicationId }, { externalRef: applicationId } as any] },
+      include: { product: true, customer: true },
+    });
+    if (!loan) return reply.status(404).send(failure('NOT_FOUND', `No application ${applicationId}`));
+    return reply.send(
+      success({
+        applicationId: (loan as any).externalRef ?? loan.id,
+        cif: loan.customer?.cifNumber,
+        borrowerName: loan.customer?.fullName,
+        product: loan.product?.code,
+        productName: loan.product?.name,
+        amount: { currency: loan.currency, amount: Number(loan.principal) },
+        tenor: `${loan.termMonths}M`,
+        purpose: loan.purpose,
+        pricing: { allInRate: Number(loan.interestRate) },
+        state: loan.status,
+        submittedAt: loan.createdAt,
+        approvedAt: (loan as any).approvedAt ?? null,
+        disbursedAt: loan.disbursedAt ?? null,
+      }),
+    );
+  });
 }

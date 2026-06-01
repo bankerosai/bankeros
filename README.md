@@ -114,6 +114,37 @@ A companion Claude plugin lives at [`apps/banker-copilot/`](apps/banker-copilot/
 
 All skills are read-only and human-decides-final. See [`apps/banker-copilot/README.md`](apps/banker-copilot/README.md) for install + worked examples.
 
+### Trying Copilot against real HTTP tools
+
+The Vite dev plugin's Copilot has three tool-data modes (`COPILOT_TOOL_BACKEND` in `.env`):
+
+| Mode | Use when |
+|------|---------|
+| `mock` | Fastest demo — fixtures in the plugin itself; no backend at all |
+| `http` | Real HTTP path — Copilot calls a backend on `BANKEROS_API_BASE` |
+| `auto` (default) | Try `http`; silently fall back to `mock` on connection error |
+
+Two ways to run with `http`:
+
+```bash
+# Path A — fixture-backed demo-backend on :3000 (no Postgres / Kafka needed)
+make demo-up                              # starts apps/demo-backend
+# add to .env:
+#   COPILOT_TOOL_BACKEND=http
+#   BANKEROS_API_BASE=http://localhost:3000
+make dev-dashboard                        # restart so Vite picks up env
+
+# Path B — real microservices backed by Postgres
+make copilot-real                         # docker postgres + migrate + seed
+pnpm --filter @bankeros/api-gateway dev &      # :3000
+pnpm --filter @bankeros/onboarding-service dev &  # /v1/customers, /v1/onboarding/kyc
+pnpm --filter @bankeros/compliance-service dev & # /v1/risk/credit-rating, /v1/risk/exposure
+pnpm --filter @bankeros/lending-service dev &    # /fineract-provider/api/v1/loans/applications
+make dev-dashboard
+```
+
+The seed (`packages/database/prisma/seed.ts`) creates demo CIFs `CIF-884109`, `CIF-220184`, `CIF-330042`, `CIF-440022`, `CIF-550088` so the same `@`-mention picker works in both paths.
+
 ## 🧪 Testing
 
 ```bash
