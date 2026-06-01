@@ -1,0 +1,11 @@
+{
+  "name": "banker-copilot",
+  "version": "0.1.0",
+  "description": "Banker Copilot for BankerOS — skills and slash commands that translate BankerOS data into the artefacts bankers actually produce: credit memos, KYC opinions, NPL explanations, CEO board briefs, customer 360 views, FX hedging recommendations. Bank-employee-facing; never executes transactions.",
+  "author": {
+    "name": "BankerOS",
+    "url": "https://github.com/bankerosai/bankeros"
+  },
+  "homepage": "https://github.com/bankerosai/bankeros/tree/main/apps/banker-copilot",
+  "license": "Apache-2.0"
+}

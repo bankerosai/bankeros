@@ -99,6 +99,21 @@ make dev
 | **FATF Travel Rule** | Digital Assets cross-border transfers |
 | **FAPI 1.0 Advanced** | API security profile for Open Banking |
 
+## 🤖 Banker Copilot (Claude plugin)
+
+A companion Claude plugin lives at [`apps/banker-copilot/`](apps/banker-copilot/). Modeled on Anthropic's [`financial-services`](https://github.com/anthropics/financial-services) plugin format, but inverted: instead of analyst tools for external research, it gives **bank employees** skills that draft the artefacts they actually produce — credit memos, KYC opinions, NPL explainers, CEO board briefs, customer 360 views, FX hedging proposals.
+
+| Skill | Audience | Slash command |
+|-------|----------|---------------|
+| credit-memo | Credit Officer / RM | `/credit-memo <APP-ID>` |
+| kyc-review | Compliance Officer | `/kyc-review <CIF>` |
+| npl-explain | CRO / Risk Analyst | `/npl-explain --period <range>` |
+| ceo-brief | CEO / Board | `/ceo-brief --audience board` |
+| customer-360 | RM / CRO / Service | `/customer-360 <CIF>` |
+| fx-hedging-advisor | Treasury Sales | `/fx-hedge <CIF> --horizon <range>` |
+
+All skills are read-only and human-decides-final. See [`apps/banker-copilot/README.md`](apps/banker-copilot/README.md) for install + worked examples.
+
 ## 🧪 Testing
 
 ```bash
