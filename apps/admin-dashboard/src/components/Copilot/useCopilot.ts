@@ -7,6 +7,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 
+export interface CopilotToolCall {
+  name: string;
+  args: Record<string, unknown>;
+  ok?: boolean;
+  summary?: string;
+}
+
 export interface CopilotMessage {
   id: string;
   role: 'USER' | 'ASSISTANT' | 'TOOL';
@@ -14,6 +21,7 @@ export interface CopilotMessage {
   createdAt: string;
   artefactId?: string;
   streaming?: boolean;
+  toolCalls?: CopilotToolCall[];
 }
 
 export interface CopilotSkill {
@@ -56,6 +64,8 @@ interface CopilotState {
   modelLabel: string | null;
   artefacts: CopilotArtefact[];
   openArtefactId: string | null;
+  /** Count of assistant messages that arrived while the sidebar was closed. */
+  unreadCount: number;
 }
 
 const initial: CopilotState = {
@@ -71,6 +81,7 @@ const initial: CopilotState = {
   modelLabel: null,
   artefacts: [],
   openArtefactId: null,
+  unreadCount: 0,
 };
 
 let state: CopilotState = { ...initial };
@@ -144,9 +155,13 @@ export function useCopilot() {
     };
   }, []);
 
-  const open = useCallback(() => set({ isOpen: true }), []);
+  // Opening the sidebar clears unread; closing leaves count alone.
+  const open = useCallback(() => set({ isOpen: true, unreadCount: 0 }), []);
   const close = useCallback(() => set({ isOpen: false }), []);
-  const toggle = useCallback(() => set({ isOpen: !state.isOpen }), []);
+  const toggle = useCallback(
+    () => set({ isOpen: !state.isOpen, unreadCount: state.isOpen ? state.unreadCount : 0 }),
+    [],
+  );
   const setView = useCallback((v: CopilotView) => set({ view: v }), []);
 
   const checkConnection = useCallback(async () => {
@@ -250,19 +265,36 @@ export function useCopilot() {
           set({ sessionId });
         }
 
-        // Stream the reply
-        await streamMessage(sessionId, content, pageContext, (delta) => {
-          state.messages = state.messages.map((m) =>
-            m.id === assistantId ? { ...m, content: m.content + delta } : m,
-          );
-          set({ messages: state.messages });
-        });
+        // Stream the reply (text deltas + tool events)
+        await streamMessage(
+          sessionId,
+          content,
+          pageContext,
+          (delta) => {
+            state.messages = state.messages.map((m) =>
+              m.id === assistantId ? { ...m, content: m.content + delta } : m,
+            );
+            set({ messages: state.messages });
+          },
+          (toolCall) => {
+            state.messages = state.messages.map((m) =>
+              m.id === assistantId
+                ? { ...m, toolCalls: [...(m.toolCalls ?? []), toolCall] }
+                : m,
+            );
+            set({ messages: state.messages });
+          },
+        );
 
         // Finalize bubble + refresh artefacts (in case the model produced one)
         state.messages = state.messages.map((m) =>
           m.id === assistantId ? { ...m, streaming: false } : m,
         );
-        set({ messages: state.messages, busy: false });
+        set({
+          messages: state.messages,
+          busy: false,
+          unreadCount: state.isOpen ? 0 : state.unreadCount + 1,
+        });
         void loadArtefacts();
       } catch (e: any) {
         state.messages = state.messages.map((m) =>
@@ -321,6 +353,7 @@ async function streamMessage(
   content: string,
   pageContext: { pathname: string; refs: Record<string, string> },
   onDelta: (delta: string) => void,
+  onToolResult: (call: CopilotToolCall) => void,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/sessions/${sessionId}/stream`, {
     method: 'POST',
@@ -328,7 +361,6 @@ async function streamMessage(
     body: JSON.stringify({ content, pageContext }),
   });
   if (!res.ok || !res.body) {
-    // Try to read error body
     let msg = `HTTP ${res.status}`;
     try {
       const t = await res.text();
@@ -361,10 +393,16 @@ async function streamMessage(
         const json = JSON.parse(data);
         if (eventName === 'delta' && typeof json.text === 'string') {
           onDelta(json.text);
+        } else if (eventName === 'tool_result') {
+          onToolResult({
+            name: String(json.name ?? '?'),
+            args: (json.args as Record<string, unknown>) ?? {},
+            ok: !!json.ok,
+            summary: typeof json.summary === 'string' ? json.summary : undefined,
+          });
         } else if (eventName === 'error') {
           throw new Error(json.message ?? '流式响应失败');
         }
-        // 'done' event — ignore here; loadArtefacts called by caller
       } catch (e: any) {
         if (eventName === 'error') throw e;
         /* skip malformed */

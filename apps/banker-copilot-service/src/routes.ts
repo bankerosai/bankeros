@@ -6,6 +6,12 @@ import { ALL_TOOLS, filterToolsForRole } from '@bankeros/mcp-bankeros';
 import { loadSkills, loadCommands } from './skill-loader';
 import { runTurn } from './copilot';
 import { getStore } from './store';
+import { consumeToken } from './rate-limit';
+import {
+  sessionsStarted,
+  artefactsCreated,
+  recordTurn,
+} from './metrics';
 
 const CreateSessionSchema = z.object({
   /** Optional first message to immediately drive a turn */
@@ -106,9 +112,21 @@ export async function copilotRoutes(app: FastifyInstance) {
     }
     const store = await getStore();
     const session = await store.createSession(u.userId);
+    sessionsStarted.inc({ role: u.role });
 
     if (body.data.firstMessage) {
-      const result = await runTurn({
+      // Rate-limit guard
+      const rl = consumeToken(u.userId, u.role);
+      if (!rl.ok) {
+        return reply
+          .status(429)
+          .header('Retry-After', Math.ceil(rl.retryAfterMs / 1000).toString())
+          .send(failure('RATE_LIMITED', `请等待 ${Math.ceil(rl.retryAfterMs / 1000)} 秒后再试`));
+      }
+      const t0 = Date.now();
+      let result;
+      try {
+        result = await runTurn({
         sessionId: session.id,
         userMessage: body.data.firstMessage,
         promptCtx: {
@@ -124,6 +142,29 @@ export async function copilotRoutes(app: FastifyInstance) {
         skills,
         commands,
       });
+      } catch (e: any) {
+        recordTurn({
+          role: u.role, skill: null, model: process.env.COPILOT_MODEL ?? 'unknown',
+          outcome: 'error', latencyMs: Date.now() - t0,
+          inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0,
+        });
+        throw e;
+      }
+      recordTurn({
+        role: u.role,
+        skill: (result as any).skillUsed ?? null,
+        model: (result as any).provider === 'anthropic' ? process.env.COPILOT_MODEL ?? 'claude' : process.env.COPILOT_MODEL ?? 'unknown',
+        outcome: 'ok',
+        latencyMs: Date.now() - t0,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        cacheReadTokens: result.cacheReadTokens,
+        cacheWriteTokens: result.cacheWriteTokens,
+        costUsd: result.costUsd,
+      });
+      if (result.artefact) {
+        artefactsCreated.inc({ skill: result.artefact.skill, role: u.role });
+      }
       return success({ session, result });
     }
     return success({ session });
@@ -144,22 +185,55 @@ export async function copilotRoutes(app: FastifyInstance) {
     if (!body.success) {
       return reply.status(422).send(failure('VALIDATION_ERROR', 'Invalid body', body.error.flatten()));
     }
-    const result = await runTurn({
-      sessionId: id,
-      userMessage: body.data.content,
-      promptCtx: {
-        userId: u.userId,
-        role: u.role,
-        pageContext: body.data.pageContext,
-      },
-      toolCtx: {
-        userJwt: u.jwt,
-        correlationId: req.id,
-        baseUrl: process.env.BANKEROS_API_BASE || 'http://api-gateway:3000',
-      },
-      skills,
-      commands,
+    const rl = consumeToken(u.userId, u.role);
+    if (!rl.ok) {
+      return reply
+        .status(429)
+        .header('Retry-After', Math.ceil(rl.retryAfterMs / 1000).toString())
+        .send(failure('RATE_LIMITED', `请等待 ${Math.ceil(rl.retryAfterMs / 1000)} 秒后再试`));
+    }
+    const t0 = Date.now();
+    let result;
+    try {
+      result = await runTurn({
+        sessionId: id,
+        userMessage: body.data.content,
+        promptCtx: {
+          userId: u.userId,
+          role: u.role,
+          pageContext: body.data.pageContext,
+        },
+        toolCtx: {
+          userJwt: u.jwt,
+          correlationId: req.id,
+          baseUrl: process.env.BANKEROS_API_BASE || 'http://api-gateway:3000',
+        },
+        skills,
+        commands,
+      });
+    } catch (e: any) {
+      recordTurn({
+        role: u.role, skill: null, model: process.env.COPILOT_MODEL ?? 'unknown',
+        outcome: 'error', latencyMs: Date.now() - t0,
+        inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0,
+      });
+      throw e;
+    }
+    recordTurn({
+      role: u.role,
+      skill: (result as any).skillUsed ?? null,
+      model: process.env.COPILOT_MODEL ?? 'unknown',
+      outcome: 'ok',
+      latencyMs: Date.now() - t0,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      cacheReadTokens: result.cacheReadTokens,
+      cacheWriteTokens: result.cacheWriteTokens,
+      costUsd: result.costUsd,
     });
+    if (result.artefact) {
+      artefactsCreated.inc({ skill: result.artefact.skill, role: u.role });
+    }
     return success(result);
   });
 

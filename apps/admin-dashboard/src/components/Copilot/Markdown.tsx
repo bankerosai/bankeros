@@ -166,13 +166,12 @@ function splitRow(line: string): string[] {
     .map((c) => c.trim());
 }
 
-/** Inline-level markdown → React fragments. */
+/** Inline-level markdown → React fragments. Recognises @entity mentions as chips. */
 function inline(text: string): ReactNode {
-  // We process recursively by repeatedly replacing patterns with placeholders.
-  // For simplicity, we tokenize linearly.
   const out: ReactNode[] = [];
+  // Order matters: more specific tokens first.
   const re =
-    /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)]+\))/g;
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)]+\))|(@(?:CIF-[A-Z0-9]+|APP-\d{4}-\d+|LC\d{4}-\d+))/g;
   let last = 0;
   let key = 0;
   let m: RegExpExecArray | null;
@@ -189,6 +188,8 @@ function inline(text: string): ReactNode {
       out.push(<strong key={key++}>{tok.slice(2, -2)}</strong>);
     } else if (tok.startsWith('*')) {
       out.push(<em key={key++}>{tok.slice(1, -1)}</em>);
+    } else if (tok.startsWith('@')) {
+      out.push(<MentionChip key={key++} ref_={tok.slice(1)} />);
     } else if (tok.startsWith('[')) {
       const lm = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
       if (lm) {
@@ -205,4 +206,26 @@ function inline(text: string): ReactNode {
   }
   if (last < text.length) out.push(text.slice(last));
   return out;
+}
+
+/** Renders @CIF-XXX / @APP-XXXX-XXX / @LCXXXX-XXX as a coloured pill that
+ *  links to the corresponding BankerOS page (best-effort URL guess). */
+function MentionChip({ ref_ }: { ref_: string }) {
+  let kind: 'customer' | 'loan' | 'lc' = 'customer';
+  let href = '#';
+  if (ref_.startsWith('CIF-')) {
+    kind = 'customer';
+    href = `/admin/customers/${ref_}`;
+  } else if (ref_.startsWith('APP-')) {
+    kind = 'loan';
+    href = `/admin/credit-workflow/applications/${ref_}`;
+  } else if (ref_.startsWith('LC')) {
+    kind = 'lc';
+    href = `/business/trade?lc=${ref_}`;
+  }
+  return (
+    <a href={href} className={`md-mention md-mention-${kind}`} title={`跳转到 ${ref_}`}>
+      @{ref_}
+    </a>
+  );
 }

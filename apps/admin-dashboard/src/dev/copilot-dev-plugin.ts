@@ -19,6 +19,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import matter from 'gray-matter';
+import { MOCK_TOOLS, mockExecute } from './copilot-mock-data';
+
+const MAX_TOOL_ROUNDS = parseInt(process.env.COPILOT_MAX_TOOL_ROUNDS ?? '6');
 
 // ────────────────────────────────────────────────────────────
 // Proxy support — Node 18+ fetch ignores HTTPS_PROXY by default.
@@ -53,9 +56,16 @@ function getFetchInit(): Partial<RequestInit> {
 // ────────────────────────────────────────────────────────────
 // State
 // ────────────────────────────────────────────────────────────
+interface ToolCall {
+  id: string;
+  name: string;
+  argsJson: string;
+}
 interface ChatMsg {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;     // for role=tool only
 }
 interface Session {
   id: string;
@@ -90,6 +100,49 @@ const SESSIONS = new Map<string, Session>();
 const ARTEFACTS = new Map<string, Artefact>();
 let SKILLS_CACHE: Skill[] | null = null;
 let COMMANDS_CACHE: { name: string }[] | null = null;
+
+// ────────────────────────────────────────────────────────────
+// Artefact persistence — survive Vite restarts so banker IC memos
+// don't vanish on hot-reload. JSON-per-file in .claude/copilot-artefacts/.
+// ────────────────────────────────────────────────────────────
+function artefactsDir(): string {
+  return path.join(repoRoot(), '.claude', 'copilot-artefacts');
+}
+
+async function rehydrateArtefacts(): Promise<number> {
+  const dir = artefactsDir();
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    const files = await fs.readdir(dir);
+    let n = 0;
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        const raw = await fs.readFile(path.join(dir, f), 'utf8');
+        const a = JSON.parse(raw) as Artefact;
+        if (a?.id && a?.skill && a?.content) {
+          ARTEFACTS.set(a.id, a);
+          n++;
+        }
+      } catch {
+        /* skip malformed */
+      }
+    }
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+async function persistArtefact(a: Artefact): Promise<void> {
+  try {
+    const dir = artefactsDir();
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, `${a.id}.json`), JSON.stringify(a, null, 2), 'utf8');
+  } catch (err: any) {
+    console.warn('[copilot-dev] artefact persist failed:', err?.message ?? err);
+  }
+}
 
 // Hardcoded mention catalogue for dev mode — production would query BankerOS.
 const MENTIONS: Mention[] = [
@@ -234,10 +287,38 @@ function providerHintFor(model: string): Record<string, unknown> | undefined {
   return undefined;
 }
 
+/** Convert our internal ChatMsg list to OpenAI-format messages (the only shape
+ *  OpenRouter accepts via its compatibility layer). Handles tool_calls + tool_result. */
+function toOpenAIMessages(messages: ChatMsg[]): any[] {
+  return messages.map((m) => {
+    if (m.role === 'tool') {
+      return { role: 'tool', tool_call_id: m.toolCallId, content: m.content };
+    }
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      return {
+        role: 'assistant',
+        content: m.content || null,
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: { name: tc.name, arguments: tc.argsJson },
+        })),
+      };
+    }
+    return { role: m.role, content: m.content };
+  });
+}
+
 async function callOpenRouter(
   cfg: OpenRouterCfg,
   messages: ChatMsg[],
-): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+): Promise<{
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+  toolCalls: ToolCall[];
+  finishReason: string;
+}> {
   await ensureProxyAgent();
   const provider = providerHintFor(cfg.model);
   const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
@@ -251,7 +332,9 @@ async function callOpenRouter(
     body: JSON.stringify({
       model: cfg.model,
       max_tokens: cfg.maxTokens,
-      messages,
+      messages: toOpenAIMessages(messages),
+      tools: MOCK_TOOLS.map((t) => ({ type: 'function', function: t })),
+      tool_choice: 'auto',
       ...(provider ? { provider } : {}),
     }),
     ...getFetchInit(),
@@ -264,19 +347,34 @@ async function callOpenRouter(
   } catch {
     throw new Error(`OpenRouter returned non-JSON: ${text.slice(0, 200)}`);
   }
+  const choice = data?.choices?.[0];
+  const toolCalls: ToolCall[] = (choice?.message?.tool_calls ?? []).map((tc: any) => ({
+    id: tc.id,
+    name: tc.function?.name,
+    argsJson: tc.function?.arguments ?? '{}',
+  }));
   return {
-    text: String(data?.choices?.[0]?.message?.content ?? ''),
+    text: String(choice?.message?.content ?? ''),
     inputTokens: data?.usage?.prompt_tokens ?? 0,
     outputTokens: data?.usage?.completion_tokens ?? 0,
+    toolCalls,
+    finishReason: choice?.finish_reason ?? '',
   };
 }
 
-/** Stream OpenRouter completions back via SSE. Returns the full assembled text. */
+/** Stream OpenRouter completions back via SSE. Accumulates text + tool_call deltas. */
 async function streamOpenRouter(
   cfg: OpenRouterCfg,
   messages: ChatMsg[],
   onDelta: (chunk: string) => void,
-): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  onToolCalls: (calls: ToolCall[]) => void,
+): Promise<{
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+  toolCalls: ToolCall[];
+  finishReason: string;
+}> {
   await ensureProxyAgent();
   const provider = providerHintFor(cfg.model);
   const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
@@ -290,8 +388,10 @@ async function streamOpenRouter(
     body: JSON.stringify({
       model: cfg.model,
       max_tokens: cfg.maxTokens,
-      messages,
+      messages: toOpenAIMessages(messages),
       stream: true,
+      tools: MOCK_TOOLS.map((t) => ({ type: 'function', function: t })),
+      tool_choice: 'auto',
       ...(provider ? { provider } : {}),
     }),
     ...getFetchInit(),
@@ -307,13 +407,15 @@ async function streamOpenRouter(
   let fullText = '';
   let inputTokens = 0;
   let outputTokens = 0;
+  let finishReason = '';
+  // Tool calls arrive as fragments keyed by index; accumulate then collapse.
+  const pendingTools = new Map<number, { id?: string; name?: string; args: string }>();
 
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // SSE events end with \n\n; split + process complete events
     const events = buffer.split('\n\n');
     buffer = events.pop() ?? '';
     for (const ev of events) {
@@ -323,11 +425,24 @@ async function streamOpenRouter(
       if (data === '[DONE]') continue;
       try {
         const json = JSON.parse(data);
-        const delta = json?.choices?.[0]?.delta?.content;
+        const choice = json?.choices?.[0];
+        const delta = choice?.delta?.content;
         if (typeof delta === 'string' && delta) {
           fullText += delta;
           onDelta(delta);
         }
+        const tcDeltas = choice?.delta?.tool_calls;
+        if (Array.isArray(tcDeltas)) {
+          for (const tc of tcDeltas) {
+            const idx = tc.index ?? 0;
+            const slot = pendingTools.get(idx) ?? { args: '' };
+            if (tc.id) slot.id = tc.id;
+            if (tc.function?.name) slot.name = tc.function.name;
+            if (typeof tc.function?.arguments === 'string') slot.args += tc.function.arguments;
+            pendingTools.set(idx, slot);
+          }
+        }
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
         if (json?.usage) {
           inputTokens = json.usage.prompt_tokens ?? inputTokens;
           outputTokens = json.usage.completion_tokens ?? outputTokens;
@@ -337,7 +452,12 @@ async function streamOpenRouter(
       }
     }
   }
-  return { text: fullText, inputTokens, outputTokens };
+
+  const toolCalls: ToolCall[] = [...pendingTools.values()]
+    .filter((t) => t.id && t.name)
+    .map((t) => ({ id: t.id!, name: t.name!, argsJson: t.args || '{}' }));
+  if (toolCalls.length) onToolCalls(toolCalls);
+  return { text: fullText, inputTokens, outputTokens, toolCalls, finishReason };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -377,6 +497,7 @@ function maybeCreateArtefact(
     createdAt: Date.now(),
   };
   ARTEFACTS.set(a.id, a);
+  void persistArtefact(a);
   return a;
 }
 
@@ -449,6 +570,10 @@ export function copilotDevPlugin(): Plugin {
       const maxTokens = parseInt(process.env.COPILOT_MAX_TOKENS ?? '4096');
       const cfg: OpenRouterCfg = { apiKey, baseUrl, model, maxTokens };
 
+      void rehydrateArtefacts().then((n) => {
+        if (n > 0) server.config.logger.info(`[copilot-dev] rehydrated ${n} artefacts from disk`);
+      });
+
       server.config.logger.info(
         `[copilot-dev] mounted /v1/copilot/* → OpenRouter (${model}${providerHintFor(model) ? ' · forced provider' : ''}) ${apiKey ? '✓ key loaded' : '✗ OPENROUTER_API_KEY missing'}`,
       );
@@ -520,7 +645,22 @@ export function copilotDevPlugin(): Plugin {
               return sendJson(res, 422, { success: false, error: { code: 'BAD_STATUS' } });
             }
             a.status = status;
+            void persistArtefact(a);
             return sendJson(res, 200, { success: true, data: a });
+          }
+
+          // DELETE /artefacts/:id  (truly remove — file + memory)
+          const ad = url.match(/^\/artefacts\/([^/]+)\/?$/);
+          if (req.method === 'DELETE' && ad) {
+            const a = ARTEFACTS.get(ad[1]);
+            if (!a) return sendJson(res, 404, { success: false, error: { code: 'NOT_FOUND' } });
+            ARTEFACTS.delete(a.id);
+            try {
+              await fs.unlink(path.join(artefactsDir(), `${a.id}.json`));
+            } catch {
+              /* file may not exist yet */
+            }
+            return sendJson(res, 200, { success: true, data: { deleted: true } });
           }
 
           // POST /sessions
@@ -573,20 +713,42 @@ export function copilotDevPlugin(): Plugin {
             setSseHeaders(res);
             try {
               const { convo, skill, cmdName } = await buildConvo(session, content, body?.pageContext);
-              const result = await streamOpenRouter(cfg, convo, (delta) => {
-                sseSend(res, 'delta', { text: delta });
-              });
-              session.messages.push({ role: 'assistant', content: result.text });
-              session.totalInputTokens += result.inputTokens;
-              session.totalOutputTokens += result.outputTokens;
-              const artefact = maybeCreateArtefact(session, content, result.text, cmdName);
+              let totalIn = 0;
+              let totalOut = 0;
+              let finalText = '';
+
+              for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+                const r = await streamOpenRouter(
+                  cfg,
+                  convo,
+                  (delta) => sseSend(res, 'delta', { text: delta }),
+                  (calls) => sseSend(res, 'tool_calls', { calls: calls.map((c) => ({ name: c.name, args: tryParse(c.argsJson) })) }),
+                );
+                totalIn += r.inputTokens;
+                totalOut += r.outputTokens;
+                finalText = r.text || finalText;
+
+                if (r.toolCalls.length === 0) break;
+
+                convo.push({ role: 'assistant', content: r.text, toolCalls: r.toolCalls });
+                const { rows, events } = executeTools(r.toolCalls);
+                convo.push(...rows);
+                for (const ev of events) sseSend(res, 'tool_result', ev);
+              }
+
+              session.messages.push({ role: 'assistant', content: finalText });
+              session.totalInputTokens += totalIn;
+              session.totalOutputTokens += totalOut;
+              const artefact = maybeCreateArtefact(session, content, finalText, cmdName);
               sseSend(res, 'done', {
-                inputTokens: result.inputTokens,
-                outputTokens: result.outputTokens,
+                inputTokens: totalIn,
+                outputTokens: totalOut,
                 provider: 'openrouter',
                 model: cfg.model,
                 skillUsed: skill?.name ?? null,
-                artefact: artefact ? { id: artefact.id, skill: artefact.skill, subject: artefact.subject } : undefined,
+                artefact: artefact
+                  ? { id: artefact.id, skill: artefact.skill, subject: artefact.subject }
+                  : undefined,
               });
               res.end();
             } catch (err: any) {
@@ -618,6 +780,14 @@ export function copilotDevPlugin(): Plugin {
   };
 }
 
+function tryParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return s;
+  }
+}
+
 function notConfigured(res: any) {
   return sendJson(res, 500, {
     success: false,
@@ -634,6 +804,32 @@ function notFoundSession(res: any) {
   });
 }
 
+/** Execute one or more tool calls and return synthetic ChatMsg rows to feed back to the LLM. */
+function executeTools(calls: ToolCall[]): { rows: ChatMsg[]; events: any[] } {
+  const rows: ChatMsg[] = [];
+  const events: any[] = [];
+  for (const tc of calls) {
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(tc.argsJson || '{}');
+    } catch {
+      /* leave empty */
+    }
+    const result = mockExecute(tc.name, parsed);
+    const content = result.ok
+      ? JSON.stringify(result.result).slice(0, 16000)
+      : `ERROR: ${result.error}`;
+    rows.push({ role: 'tool', content, toolCallId: tc.id });
+    events.push({
+      name: tc.name,
+      args: parsed,
+      ok: result.ok,
+      summary: result.ok ? Object.keys(result.result as any).slice(0, 6).join(', ') : result.error,
+    });
+  }
+  return { rows, events };
+}
+
 async function runTurn(
   session: Session,
   userMessage: string,
@@ -641,15 +837,34 @@ async function runTurn(
   cfg: OpenRouterCfg,
 ) {
   const { convo, skill, cmdName } = await buildConvo(session, userMessage, pageContext);
-  const result = await callOpenRouter(cfg, convo);
-  session.messages.push({ role: 'assistant', content: result.text });
-  session.totalInputTokens += result.inputTokens;
-  session.totalOutputTokens += result.outputTokens;
-  const artefact = maybeCreateArtefact(session, userMessage, result.text, cmdName);
+
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let finalText = '';
+
+  // Tool-use loop — feeds tool_calls back as tool_result rows until end_turn.
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const r = await callOpenRouter(cfg, convo);
+    inputTokens += r.inputTokens;
+    outputTokens += r.outputTokens;
+    finalText = r.text || finalText;
+
+    if (r.toolCalls.length === 0) break;
+
+    // Append the assistant turn that emitted the tool_calls, then the tool_results
+    convo.push({ role: 'assistant', content: r.text, toolCalls: r.toolCalls });
+    const { rows } = executeTools(r.toolCalls);
+    convo.push(...rows);
+  }
+
+  session.messages.push({ role: 'assistant', content: finalText });
+  session.totalInputTokens += inputTokens;
+  session.totalOutputTokens += outputTokens;
+  const artefact = maybeCreateArtefact(session, userMessage, finalText, cmdName);
   return {
-    assistantText: result.text,
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
+    assistantText: finalText,
+    inputTokens,
+    outputTokens,
     provider: 'openrouter',
     model: cfg.model,
     skillUsed: skill?.name ?? null,

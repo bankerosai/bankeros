@@ -43,6 +43,7 @@ pnpm-debug.log*
 
 # Claude tooling runtime
 .claude/scheduled_tasks.lock
+.claude/copilot-artefacts/
 
 # Database
 *.db

@@ -42,6 +42,7 @@ export default function CopilotSidebar() {
     modelLabel,
     pathname,
     artefacts,
+    unreadCount,
   } = useCopilot();
 
   const [input, setInput] = useState('');
@@ -127,16 +128,30 @@ export default function CopilotSidebar() {
   return (
     <>
       {!isOpen && (
-        <button
-          onClick={toggle}
-          title="Banker Copilot (Ctrl+K)"
-          aria-label="Open Banker Copilot"
-          style={floatingBtnStyle}
-          onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
-          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-        >
-          ✦
-        </button>
+        <div className="copilot-launcher" style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 200 }}>
+          {/* Soft pulse rings — only run when there's unread, otherwise calm. */}
+          {unreadCount > 0 && (
+            <>
+              <span className="copilot-launcher-pulse" />
+              <span className="copilot-launcher-pulse copilot-launcher-pulse-delayed" />
+            </>
+          )}
+          <button
+            onClick={toggle}
+            title="Banker Copilot (Ctrl+K)"
+            aria-label="Open Banker Copilot"
+            style={floatingBtnStyle}
+            onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
+            onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+          >
+            ✦
+          </button>
+          {unreadCount > 0 && (
+            <span className="copilot-launcher-badge" aria-label={`${unreadCount} 条新消息`}>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </div>
       )}
 
       <aside
@@ -282,6 +297,7 @@ export default function CopilotSidebar() {
                   role={m.role}
                   content={m.content}
                   streaming={m.streaming}
+                  toolCalls={m.toolCalls}
                 />
               ))}
               {error && !busy && <ErrorCard message={error} onRetry={retry} />}
@@ -448,7 +464,17 @@ function StatusPill({ connection }: { connection: any }) {
   );
 }
 
-function Bubble({ role, content, streaming }: { role: string; content: string; streaming?: boolean }) {
+function Bubble({
+  role,
+  content,
+  streaming,
+  toolCalls,
+}: {
+  role: string;
+  content: string;
+  streaming?: boolean;
+  toolCalls?: { name: string; args: Record<string, unknown>; ok?: boolean; summary?: string }[];
+}) {
   const isUser = role === 'USER';
   if (isUser) {
     return (
@@ -483,11 +509,19 @@ function Bubble({ role, content, streaming }: { role: string; content: string; s
         position: 'relative',
       }}
     >
+      {/* Tool-call chips ABOVE the text, in the order they were emitted */}
+      {toolCalls && toolCalls.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: content ? 10 : 0 }}>
+          {toolCalls.map((tc, i) => (
+            <ToolCallChip key={i} call={tc} />
+          ))}
+        </div>
+      )}
       {content ? (
         <Markdown text={content} />
-      ) : (
+      ) : !toolCalls?.length ? (
         <span style={{ color: '#64748b', fontSize: 13 }}>思考中…</span>
-      )}
+      ) : null}
       {streaming && content && (
         <span
           style={{
@@ -504,6 +538,36 @@ function Bubble({ role, content, streaming }: { role: string; content: string; s
       <style>{`
         @keyframes copilot-caret { 50% { opacity: 0 } }
       `}</style>
+    </div>
+  );
+}
+
+function ToolCallChip({ call }: { call: { name: string; args: Record<string, unknown>; ok?: boolean; summary?: string } }) {
+  const arg = Object.entries(call.args)[0];
+  const argLabel = arg ? `${arg[0]}=${String(arg[1])}` : '';
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '5px 10px',
+        background: call.ok ? 'rgba(22,163,74,0.06)' : 'rgba(220,38,38,0.06)',
+        border: `1px solid ${call.ok ? 'rgba(22,163,74,0.18)' : 'rgba(220,38,38,0.18)'}`,
+        borderRadius: 8,
+        fontSize: 11.5,
+        color: call.ok ? '#15803d' : '#b91c1c',
+        fontFamily: 'ui-monospace, monospace',
+      }}
+    >
+      <span style={{ flexShrink: 0 }}>{call.ok ? '✓' : '✗'}</span>
+      <span style={{ fontWeight: 700, color: '#334155' }}>{call.name}</span>
+      {argLabel && <span style={{ color: '#64748b' }}>({argLabel})</span>}
+      {call.summary && (
+        <span style={{ color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          → {call.summary}
+        </span>
+      )}
     </div>
   );
 }
