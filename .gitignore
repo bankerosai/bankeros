@@ -36,9 +36,13 @@ test-results/
 # Logs
 logs/
 *.log
+scripts/sync.log
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+
+# Claude tooling runtime
+.claude/scheduled_tasks.lock
 
 # Database
 *.db
