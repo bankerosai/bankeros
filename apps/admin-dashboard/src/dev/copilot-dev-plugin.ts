@@ -19,7 +19,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import matter from 'gray-matter';
-import { MOCK_TOOLS, mockExecute } from './copilot-mock-data';
+import { MOCK_TOOLS } from './copilot-mock-data';
+import { callBankerosTool, getBackend, setUndiciDispatcher } from './copilot-bankeros-client';
+import {
+  getProvider,
+  setProviderDispatcher,
+  type ChatMsg as ProviderChatMsg,
+  type ToolCall as ProviderToolCall,
+} from './copilot-providers';
 
 const MAX_TOOL_ROUNDS = parseInt(process.env.COPILOT_MAX_TOOL_ROUNDS ?? '6');
 
@@ -44,6 +51,8 @@ async function ensureProxyAgent(): Promise<void> {
   try {
     const undici = await import('undici');
     undiciProxyAgent = new undici.ProxyAgent(proxy);
+    setUndiciDispatcher(undiciProxyAgent);
+    setProviderDispatcher(undiciProxyAgent);
     console.log(`[copilot-dev] using proxy: ${proxy}`);
   } catch (e: any) {
     console.warn('[copilot-dev] proxy requested but undici unavailable:', e?.message ?? e);
@@ -211,9 +220,13 @@ async function loadCommands(): Promise<{ name: string }[]> {
 // ────────────────────────────────────────────────────────────
 // System prompt (Chinese — keep banking jargon bilingual when needed)
 // ────────────────────────────────────────────────────────────
-function buildSystemPrompt(skill?: Skill, pageContext?: { pathname?: string }): string {
-  const lines: string[] = [];
-  lines.push(
+/**
+ * STATIC system block — identity + behavioural rules + style.
+ * Marked with cache_control on the Anthropic provider so subsequent turns
+ * within the 5-min cache TTL pay near-zero input-token cost on this block.
+ */
+function buildStaticSystem(skill?: Skill): string {
+  const lines: string[] = [
     `你是 **Banker Copilot**，嵌入在 BankerOS 数字银行平台内部的智能助手，服务对象是银行内部员工（客户经理、信贷官、合规官、CRO、CFO、行长、运营、财富顾问、Treasury Sales 等）。`,
     ``,
     `你的核心职责：基于 BankerOS 的真实数据，按内部规范帮员工**起草**银行内部产物 —— 信贷委员会备忘录（IC Memo）、KYC 评审意见、NPL 异动分析、客户 360 视图、董事会简报、FX 套保方案等。`,
@@ -237,59 +250,43 @@ function buildSystemPrompt(skill?: Skill, pageContext?: { pathname?: string }): 
     `- 不确定时，请用一个聚焦的澄清问题，而不是猜。`,
     ``,
     `# 当前运行环境`,
-    `这是开发环境，没有接通真实的 BankerOS 工具调用。在本次会话中：`,
-    `- 任何"工具调用结果"请用**符合真实业务逻辑的示意数据**填充，并在产物里明确标注"（开发环境示意数据）"。`,
-    `- 银行真实业务上线后，这些数字会被 BankerOS 服务的真实数据替换。`,
-  );
-
-  if (pageContext?.pathname) {
-    lines.push(``, `# 当前用户所在页面`, `\`${pageContext.pathname}\``);
-    lines.push(
-      `当用户用"这单"、"这个客户"等指代时，请优先理解为当前页面对应的实体。`,
-    );
-  }
-
+    `这是开发环境。若 BankerOS 工具不可达，会自动回退到 mock 示意数据 —— 在产物中标注"（开发环境示意数据）"。生产环境会替换为真实数据。`,
+  ];
+  // Skills are also part of the static cache key — same skill within TTL = cache hit
   if (skill) {
     lines.push(``, `# 当前激活的 Skill：${skill.name}`, `*${skill.description}*`, ``);
     lines.push(`## Skill 指令（严格遵守）`);
     lines.push(skill.body);
   }
-
   return lines.join('\n');
+}
+
+/** DYNAMIC system block — per-call context only (page path, refs). Never cached. */
+function buildDynamicSystem(pageContext?: { pathname?: string }): string {
+  if (!pageContext?.pathname) return '';
+  return [
+    `# 当前用户所在页面`,
+    `\`${pageContext.pathname}\``,
+    `当用户用"这单"、"这个客户"等指代时，请优先理解为当前页面对应的实体。`,
+  ].join('\n');
+}
+
+/** Backwards-compat shim — concatenates both blocks. Kept until callers migrate. */
+function buildSystemPrompt(skill?: Skill, pageContext?: { pathname?: string }): string {
+  const a = buildStaticSystem(skill);
+  const b = buildDynamicSystem(pageContext);
+  return b ? `${a}\n\n${b}` : a;
 }
 
 // ────────────────────────────────────────────────────────────
 // OpenRouter calls
 // ────────────────────────────────────────────────────────────
-interface OpenRouterCfg {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
+interface TurnCfg {
   maxTokens: number;
 }
 
-/**
- * Resolve OpenRouter provider override based on model prefix.
- * For Anthropic models we force Anthropic Direct to avoid AWS Bedrock's
- * region restrictions. Override via OPENROUTER_PROVIDER_ORDER=A,B,C env.
- */
-function providerHintFor(model: string): Record<string, unknown> | undefined {
-  const envOrder = process.env.OPENROUTER_PROVIDER_ORDER;
-  if (envOrder) {
-    return {
-      order: envOrder.split(',').map((s) => s.trim()).filter(Boolean),
-      allow_fallbacks: process.env.OPENROUTER_ALLOW_FALLBACKS !== 'false',
-    };
-  }
-  if (model.startsWith('anthropic/')) {
-    return { order: ['Anthropic'], allow_fallbacks: false };
-  }
-  return undefined;
-}
-
-/** Convert our internal ChatMsg list to OpenAI-format messages (the only shape
- *  OpenRouter accepts via its compatibility layer). Handles tool_calls + tool_result. */
-function toOpenAIMessages(messages: ChatMsg[]): any[] {
+/** UNUSED — kept here only so old callers don't break. Provider abstraction now owns OpenAI mapping. */
+function _legacyToOpenAIMessages(messages: ChatMsg[]): any[] {
   return messages.map((m) => {
     if (m.role === 'tool') {
       return { role: 'tool', tool_call_id: m.toolCallId, content: m.content };
@@ -309,156 +306,9 @@ function toOpenAIMessages(messages: ChatMsg[]): any[] {
   });
 }
 
-async function callOpenRouter(
-  cfg: OpenRouterCfg,
-  messages: ChatMsg[],
-): Promise<{
-  text: string;
-  inputTokens: number;
-  outputTokens: number;
-  toolCalls: ToolCall[];
-  finishReason: string;
-}> {
-  await ensureProxyAgent();
-  const provider = providerHintFor(cfg.model);
-  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${cfg.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/bankerosai/bankeros',
-      'X-Title': 'BankerOS Banker Copilot (dev)',
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      max_tokens: cfg.maxTokens,
-      messages: toOpenAIMessages(messages),
-      tools: MOCK_TOOLS.map((t) => ({ type: 'function', function: t })),
-      tool_choice: 'auto',
-      ...(provider ? { provider } : {}),
-    }),
-    ...getFetchInit(),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 400)}`);
-  let data: any;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`OpenRouter returned non-JSON: ${text.slice(0, 200)}`);
-  }
-  const choice = data?.choices?.[0];
-  const toolCalls: ToolCall[] = (choice?.message?.tool_calls ?? []).map((tc: any) => ({
-    id: tc.id,
-    name: tc.function?.name,
-    argsJson: tc.function?.arguments ?? '{}',
-  }));
-  return {
-    text: String(choice?.message?.content ?? ''),
-    inputTokens: data?.usage?.prompt_tokens ?? 0,
-    outputTokens: data?.usage?.completion_tokens ?? 0,
-    toolCalls,
-    finishReason: choice?.finish_reason ?? '',
-  };
-}
-
-/** Stream OpenRouter completions back via SSE. Accumulates text + tool_call deltas. */
-async function streamOpenRouter(
-  cfg: OpenRouterCfg,
-  messages: ChatMsg[],
-  onDelta: (chunk: string) => void,
-  onToolCalls: (calls: ToolCall[]) => void,
-): Promise<{
-  text: string;
-  inputTokens: number;
-  outputTokens: number;
-  toolCalls: ToolCall[];
-  finishReason: string;
-}> {
-  await ensureProxyAgent();
-  const provider = providerHintFor(cfg.model);
-  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${cfg.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/bankerosai/bankeros',
-      'X-Title': 'BankerOS Banker Copilot (dev)',
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      max_tokens: cfg.maxTokens,
-      messages: toOpenAIMessages(messages),
-      stream: true,
-      tools: MOCK_TOOLS.map((t) => ({ type: 'function', function: t })),
-      tool_choice: 'auto',
-      ...(provider ? { provider } : {}),
-    }),
-    ...getFetchInit(),
-  });
-  if (!res.ok || !res.body) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error(`OpenRouter ${res.status}: ${errBody.slice(0, 400)}`);
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let fullText = '';
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let finishReason = '';
-  // Tool calls arrive as fragments keyed by index; accumulate then collapse.
-  const pendingTools = new Map<number, { id?: string; name?: string; args: string }>();
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const events = buffer.split('\n\n');
-    buffer = events.pop() ?? '';
-    for (const ev of events) {
-      const line = ev.trim();
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') continue;
-      try {
-        const json = JSON.parse(data);
-        const choice = json?.choices?.[0];
-        const delta = choice?.delta?.content;
-        if (typeof delta === 'string' && delta) {
-          fullText += delta;
-          onDelta(delta);
-        }
-        const tcDeltas = choice?.delta?.tool_calls;
-        if (Array.isArray(tcDeltas)) {
-          for (const tc of tcDeltas) {
-            const idx = tc.index ?? 0;
-            const slot = pendingTools.get(idx) ?? { args: '' };
-            if (tc.id) slot.id = tc.id;
-            if (tc.function?.name) slot.name = tc.function.name;
-            if (typeof tc.function?.arguments === 'string') slot.args += tc.function.arguments;
-            pendingTools.set(idx, slot);
-          }
-        }
-        if (choice?.finish_reason) finishReason = choice.finish_reason;
-        if (json?.usage) {
-          inputTokens = json.usage.prompt_tokens ?? inputTokens;
-          outputTokens = json.usage.completion_tokens ?? outputTokens;
-        }
-      } catch {
-        /* skip malformed chunks */
-      }
-    }
-  }
-
-  const toolCalls: ToolCall[] = [...pendingTools.values()]
-    .filter((t) => t.id && t.name)
-    .map((t) => ({ id: t.id!, name: t.name!, argsJson: t.args || '{}' }));
-  if (toolCalls.length) onToolCalls(toolCalls);
-  return { text: fullText, inputTokens, outputTokens, toolCalls, finishReason };
-}
+// (Inline OpenRouter HTTP code lived here in earlier revisions; now lives in
+// copilot-providers.ts. The dev plugin only ever calls provider.generate /
+// provider.stream now.)
 
 // ────────────────────────────────────────────────────────────
 // Turn orchestration
@@ -505,21 +355,28 @@ async function buildConvo(
   session: Session,
   userMessage: string,
   pageContext: { pathname?: string } | undefined,
-): Promise<{ convo: ChatMsg[]; skill?: Skill; cmdName?: string }> {
+): Promise<{
+  convo: ChatMsg[];
+  systemStatic: string;
+  systemDynamic: string;
+  skill?: Skill;
+  cmdName?: string;
+}> {
   const skills = await loadSkills();
   const { skill, args, cmdName } = pickSlashSkill(userMessage, skills);
   const effective = skill
     ? `${userMessage}\n\n（已识别斜杠命令 "/${skill.name}"，参数：${args || '无'}。严格按当前激活 skill 指令执行。）`
     : userMessage;
 
-  const system = buildSystemPrompt(skill, pageContext);
+  const systemStatic = buildStaticSystem(skill);
+  const systemDynamic = buildDynamicSystem(pageContext);
+  // Convo is messages only — providers receive system separately.
   const convo: ChatMsg[] = [
-    { role: 'system', content: system },
     ...session.messages,
     { role: 'user', content: effective },
   ];
   session.messages.push({ role: 'user', content: userMessage });
-  return { convo, skill, cmdName };
+  return { convo, systemStatic, systemDynamic, skill, cmdName };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -564,33 +421,50 @@ export function copilotDevPlugin(): Plugin {
   return {
     name: 'bankeros-copilot-dev',
     configureServer(server: ViteDevServer) {
-      const apiKey = process.env.OPENROUTER_API_KEY ?? '';
-      const baseUrl = process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
-      const model = process.env.COPILOT_MODEL ?? 'anthropic/claude-sonnet-4.5';
       const maxTokens = parseInt(process.env.COPILOT_MAX_TOKENS ?? '4096');
-      const cfg: OpenRouterCfg = { apiKey, baseUrl, model, maxTokens };
+      const cfg: TurnCfg = { maxTokens };
+      // Eagerly resolve the provider so config errors fail fast at boot,
+      // not on the first user message.
+      let providerName = 'unknown';
+      let providerModel = 'unknown';
+      let providerRoute = 'unknown';
+      let keyConfigured = false;
+      try {
+        const p = getProvider();
+        providerName = p.name;
+        providerModel = p.model;
+        providerRoute = p.route ?? p.name;
+        keyConfigured = true;
+      } catch (e: any) {
+        server.config.logger.warn(`[copilot-dev] provider init failed: ${e?.message ?? e}`);
+      }
 
       void rehydrateArtefacts().then((n) => {
         if (n > 0) server.config.logger.info(`[copilot-dev] rehydrated ${n} artefacts from disk`);
       });
 
       server.config.logger.info(
-        `[copilot-dev] mounted /v1/copilot/* → OpenRouter (${model}${providerHintFor(model) ? ' · forced provider' : ''}) ${apiKey ? '✓ key loaded' : '✗ OPENROUTER_API_KEY missing'}`,
+        `[copilot-dev] mounted /v1/copilot/* → ${providerRoute} (${providerModel}) ${keyConfigured ? '✓ key loaded' : '✗ key missing'}  ·  tool backend=${getBackend()}`,
       );
 
       server.middlewares.use('/v1/copilot', async (req: any, res: any) => {
         try {
+          // Make sure the undici proxy dispatcher is hooked up before any
+          // outbound call (OpenRouter / Anthropic / BankerOS) is attempted.
+          await ensureProxyAgent();
           const url = (req.originalUrl || req.url || '').replace(/^\/v1\/copilot/, '');
 
           // GET /health
           if (req.method === 'GET' && (url === '/health' || url === '' || url === '/')) {
             return sendJson(res, 200, {
               ok: true,
-              provider: 'openrouter',
-              model,
-              keyConfigured: !!apiKey,
+              provider: providerName,
+              model: providerModel,
+              route: providerRoute,
+              keyConfigured,
               mode: 'vite-dev-plugin',
-              forcedProviderOrder: providerHintFor(model)?.order,
+              toolBackend: getBackend(),
+              promptCaching: providerName === 'anthropic',
             });
           }
 
@@ -665,7 +539,7 @@ export function copilotDevPlugin(): Plugin {
 
           // POST /sessions
           if (req.method === 'POST' && url === '/sessions') {
-            if (!apiKey) return notConfigured(res);
+            if (!keyConfigured) return notConfigured(res);
             const body = (await readJsonBody(req)) as any;
             const session: Session = {
               id: randomUUID(),
@@ -690,7 +564,7 @@ export function copilotDevPlugin(): Plugin {
           // POST /sessions/:id/messages — non-streaming
           const m = url.match(/^\/sessions\/([^/]+)\/messages\/?$/);
           if (req.method === 'POST' && m) {
-            if (!apiKey) return notConfigured(res);
+            if (!keyConfigured) return notConfigured(res);
             const session = SESSIONS.get(m[1]);
             if (!session) return notFoundSession(res);
             const body = (await readJsonBody(req)) as any;
@@ -703,7 +577,7 @@ export function copilotDevPlugin(): Plugin {
           // POST /sessions/:id/stream — Server-Sent Events
           const s = url.match(/^\/sessions\/([^/]+)\/stream\/?$/);
           if (req.method === 'POST' && s) {
-            if (!apiKey) return notConfigured(res);
+            if (!keyConfigured) return notConfigured(res);
             const session = SESSIONS.get(s[1]);
             if (!session) return notFoundSession(res);
             const body = (await readJsonBody(req)) as any;
@@ -712,26 +586,47 @@ export function copilotDevPlugin(): Plugin {
 
             setSseHeaders(res);
             try {
-              const { convo, skill, cmdName } = await buildConvo(session, content, body?.pageContext);
+              const provider = getProvider();
+              const { convo, systemStatic, systemDynamic, skill, cmdName } = await buildConvo(
+                session,
+                content,
+                body?.pageContext,
+              );
               let totalIn = 0;
               let totalOut = 0;
+              let cacheRead = 0;
+              let cacheWrite = 0;
               let finalText = '';
 
               for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-                const r = await streamOpenRouter(
-                  cfg,
-                  convo,
+                const r = await provider.stream(
+                  {
+                    systemStatic,
+                    systemDynamic,
+                    messages: convo as unknown as ProviderChatMsg[],
+                    tools: MOCK_TOOLS,
+                    maxTokens: cfg.maxTokens,
+                  },
                   (delta) => sseSend(res, 'delta', { text: delta }),
-                  (calls) => sseSend(res, 'tool_calls', { calls: calls.map((c) => ({ name: c.name, args: tryParse(c.argsJson) })) }),
+                  (calls) =>
+                    sseSend(res, 'tool_calls', {
+                      calls: calls.map((c) => ({ name: c.name, args: tryParse(c.argsJson) })),
+                    }),
                 );
-                totalIn += r.inputTokens;
-                totalOut += r.outputTokens;
+                totalIn += r.usage.inputTokens;
+                totalOut += r.usage.outputTokens;
+                cacheRead += r.usage.cacheReadTokens;
+                cacheWrite += r.usage.cacheWriteTokens;
                 finalText = r.text || finalText;
 
                 if (r.toolCalls.length === 0) break;
 
-                convo.push({ role: 'assistant', content: r.text, toolCalls: r.toolCalls });
-                const { rows, events } = executeTools(r.toolCalls);
+                convo.push({
+                  role: 'assistant',
+                  content: r.text,
+                  toolCalls: r.toolCalls as unknown as ToolCall[],
+                });
+                const { rows, events } = await executeTools(r.toolCalls as unknown as ToolCall[]);
                 convo.push(...rows);
                 for (const ev of events) sseSend(res, 'tool_result', ev);
               }
@@ -743,8 +638,11 @@ export function copilotDevPlugin(): Plugin {
               sseSend(res, 'done', {
                 inputTokens: totalIn,
                 outputTokens: totalOut,
-                provider: 'openrouter',
-                model: cfg.model,
+                cacheReadTokens: cacheRead,
+                cacheWriteTokens: cacheWrite,
+                provider: provider.name,
+                model: provider.model,
+                route: provider.route ?? provider.name,
                 skillUsed: skill?.name ?? null,
                 artefact: artefact
                   ? { id: artefact.id, skill: artefact.skill, subject: artefact.subject }
@@ -804,8 +702,8 @@ function notFoundSession(res: any) {
   });
 }
 
-/** Execute one or more tool calls and return synthetic ChatMsg rows to feed back to the LLM. */
-function executeTools(calls: ToolCall[]): { rows: ChatMsg[]; events: any[] } {
+/** Execute one or more tool calls (async — HTTP / mock per env) and return ChatMsg rows. */
+async function executeTools(calls: ToolCall[]): Promise<{ rows: ChatMsg[]; events: any[] }> {
   const rows: ChatMsg[] = [];
   const events: any[] = [];
   for (const tc of calls) {
@@ -815,16 +713,24 @@ function executeTools(calls: ToolCall[]): { rows: ChatMsg[]; events: any[] } {
     } catch {
       /* leave empty */
     }
-    const result = mockExecute(tc.name, parsed);
+    const result = await callBankerosTool(tc.name, parsed);
     const content = result.ok
       ? JSON.stringify(result.result).slice(0, 16000)
       : `ERROR: ${result.error}`;
     rows.push({ role: 'tool', content, toolCallId: tc.id });
+    const wasFallback =
+      result.ok && (result.result as any)?._fallback === 'mock_fixture';
     events.push({
       name: tc.name,
       args: parsed,
       ok: result.ok,
-      summary: result.ok ? Object.keys(result.result as any).slice(0, 6).join(', ') : result.error,
+      fallback: wasFallback,
+      summary: result.ok
+        ? Object.keys(result.result as any)
+            .filter((k) => !k.startsWith('_'))
+            .slice(0, 6)
+            .join(', ')
+        : result.error,
     });
   }
   return { rows, events };
@@ -834,26 +740,43 @@ async function runTurn(
   session: Session,
   userMessage: string,
   pageContext: { pathname?: string } | undefined,
-  cfg: OpenRouterCfg,
+  cfg: TurnCfg,
 ) {
-  const { convo, skill, cmdName } = await buildConvo(session, userMessage, pageContext);
+  const provider = getProvider();
+  const { convo, systemStatic, systemDynamic, skill, cmdName } = await buildConvo(
+    session,
+    userMessage,
+    pageContext,
+  );
 
   let inputTokens = 0;
   let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
   let finalText = '';
 
-  // Tool-use loop — feeds tool_calls back as tool_result rows until end_turn.
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const r = await callOpenRouter(cfg, convo);
-    inputTokens += r.inputTokens;
-    outputTokens += r.outputTokens;
+    const r = await provider.generate({
+      systemStatic,
+      systemDynamic,
+      messages: convo as unknown as ProviderChatMsg[],
+      tools: MOCK_TOOLS,
+      maxTokens: cfg.maxTokens,
+    });
+    inputTokens += r.usage.inputTokens;
+    outputTokens += r.usage.outputTokens;
+    cacheReadTokens += r.usage.cacheReadTokens;
+    cacheWriteTokens += r.usage.cacheWriteTokens;
     finalText = r.text || finalText;
 
     if (r.toolCalls.length === 0) break;
 
-    // Append the assistant turn that emitted the tool_calls, then the tool_results
-    convo.push({ role: 'assistant', content: r.text, toolCalls: r.toolCalls });
-    const { rows } = executeTools(r.toolCalls);
+    convo.push({
+      role: 'assistant',
+      content: r.text,
+      toolCalls: r.toolCalls as unknown as ToolCall[],
+    });
+    const { rows } = await executeTools(r.toolCalls as unknown as ToolCall[]);
     convo.push(...rows);
   }
 
@@ -865,8 +788,11 @@ async function runTurn(
     assistantText: finalText,
     inputTokens,
     outputTokens,
-    provider: 'openrouter',
-    model: cfg.model,
+    cacheReadTokens,
+    cacheWriteTokens,
+    provider: provider.name,
+    model: provider.model,
+    route: provider.route ?? provider.name,
     skillUsed: skill?.name ?? null,
     artefact: artefact
       ? { id: artefact.id, skill: artefact.skill, subject: artefact.subject }

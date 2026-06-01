@@ -27,6 +27,7 @@ scrape_configs:
           - cdp-service:3014
           - digital-assets-service:3015
           - middle-office-service:3016
+          - banker-copilot-service:3017
         labels:
           tier: application
 

@@ -11,6 +11,8 @@ export interface CopilotToolCall {
   name: string;
   args: Record<string, unknown>;
   ok?: boolean;
+  /** True when http backend was unreachable and we served from mock fixture. */
+  fallback?: boolean;
   summary?: string;
 }
 
@@ -46,7 +48,16 @@ export interface CopilotArtefact {
 
 export type CopilotConnection =
   | { status: 'unknown' }
-  | { status: 'ok'; provider: string; model: string; keyConfigured: boolean; forcedProviderOrder?: string[] }
+  | {
+      status: 'ok';
+      provider: string;
+      model: string;
+      route?: string;
+      keyConfigured: boolean;
+      forcedProviderOrder?: string[];
+      promptCaching?: boolean;
+      toolBackend?: string;
+    }
   | { status: 'down'; reason: string };
 
 export type CopilotView = 'chat' | 'artefacts';
@@ -170,7 +181,10 @@ export function useCopilot() {
         ok: boolean;
         provider: string;
         model: string;
+        route?: string;
         keyConfigured: boolean;
+        promptCaching?: boolean;
+        toolBackend?: string;
         forcedProviderOrder?: string[];
       }>('/health');
       set({
@@ -178,7 +192,10 @@ export function useCopilot() {
           status: 'ok',
           provider: h.provider,
           model: h.model,
+          route: h.route,
           keyConfigured: h.keyConfigured,
+          promptCaching: h.promptCaching,
+          toolBackend: h.toolBackend,
           forcedProviderOrder: h.forcedProviderOrder,
         },
         modelLabel: h.model,
@@ -398,6 +415,7 @@ async function streamMessage(
             name: String(json.name ?? '?'),
             args: (json.args as Record<string, unknown>) ?? {},
             ok: !!json.ok,
+            fallback: !!json.fallback,
             summary: typeof json.summary === 'string' ? json.summary : undefined,
           });
         } else if (eventName === 'error') {

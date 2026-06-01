@@ -1,0 +1,15 @@
+# Auto-provisions the copilot dashboard from the JSON file beside it.
+# Mount /etc/grafana/provisioning/dashboards/ and /var/lib/grafana/dashboards/.
+apiVersion: 1
+
+providers:
+  - name: bankeros
+    orgId: 1
+    folder: 'BankerOS'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

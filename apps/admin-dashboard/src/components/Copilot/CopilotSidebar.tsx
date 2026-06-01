@@ -205,15 +205,27 @@ export default function CopilotSidebar() {
                     whiteSpace: 'nowrap',
                   }}
                   title={
-                    connection.status === 'ok' && connection.forcedProviderOrder
-                      ? `provider 强制顺序: ${connection.forcedProviderOrder.join(', ')}`
+                    connection.status === 'ok'
+                      ? [
+                          `route: ${connection.route ?? connection.provider}`,
+                          connection.promptCaching ? '✓ prompt caching' : null,
+                          connection.toolBackend ? `tools: ${connection.toolBackend}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')
                       : modelLabel
                   }
                 >
                   {modelLabel}
-                  {connection.status === 'ok' && connection.forcedProviderOrder && (
-                    <span style={{ color: '#15803d', marginLeft: 4 }}>✓ direct</span>
+                  {connection.status === 'ok' && connection.promptCaching && (
+                    <span style={{ color: '#15803d', marginLeft: 4 }}>⚡ cache</span>
                   )}
+                  {connection.status === 'ok' &&
+                    !connection.promptCaching &&
+                    connection.route &&
+                    connection.route !== connection.provider && (
+                      <span style={{ color: '#15803d', marginLeft: 4 }}>✓ direct</span>
+                    )}
                 </div>
               )}
             </div>
@@ -542,7 +554,11 @@ function Bubble({
   );
 }
 
-function ToolCallChip({ call }: { call: { name: string; args: Record<string, unknown>; ok?: boolean; summary?: string } }) {
+function ToolCallChip({
+  call,
+}: {
+  call: { name: string; args: Record<string, unknown>; ok?: boolean; fallback?: boolean; summary?: string };
+}) {
   const arg = Object.entries(call.args)[0];
   const argLabel = arg ? `${arg[0]}=${String(arg[1])}` : '';
   return (
@@ -559,10 +575,26 @@ function ToolCallChip({ call }: { call: { name: string; args: Record<string, unk
         color: call.ok ? '#15803d' : '#b91c1c',
         fontFamily: 'ui-monospace, monospace',
       }}
+      title={call.fallback ? 'BankerOS 服务不可达，使用 mock 数据回填' : undefined}
     >
       <span style={{ flexShrink: 0 }}>{call.ok ? '✓' : '✗'}</span>
       <span style={{ fontWeight: 700, color: '#334155' }}>{call.name}</span>
       {argLabel && <span style={{ color: '#64748b' }}>({argLabel})</span>}
+      {call.fallback && (
+        <span
+          style={{
+            fontSize: 9.5,
+            fontWeight: 700,
+            padding: '1px 5px',
+            borderRadius: 3,
+            background: 'rgba(217,119,6,0.15)',
+            color: '#b45309',
+            marginLeft: 4,
+          }}
+        >
+          MOCK
+        </span>
+      )}
       {call.summary && (
         <span style={{ color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           → {call.summary}
