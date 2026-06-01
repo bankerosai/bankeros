@@ -1,17 +1,42 @@
 /**
- * CopilotSidebar — right-edge slide-out chat panel.
- * - Ctrl/Cmd+K to toggle
- * - Floating button bottom-right when closed
- * - Streams messages, shows page-context chip, slash-command palette
+ * CopilotSidebar — right-edge chat panel for BankerOS.
+ *
+ *  · Ctrl/Cmd+K to toggle
+ *  · Connection status pill (green/red/grey) with reason on hover
+ *  · Friendly error cards instead of opaque JSON-parse failures
+ *  · Markdown rendering of assistant replies (headings, tables, code…)
+ *  · Auto-scroll on new content
+ *  · Slash-command palette
+ *  · Page context chip + auto-injection
+ *  · "New conversation" reset that keeps the panel open
  */
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCopilot } from './useCopilot';
+import { Markdown } from './Markdown';
+import './copilot.css';
 
-const SIDEBAR_WIDTH = 420;
+const SIDEBAR_WIDTH = 440;
 
 export default function CopilotSidebar() {
-  const { isOpen, toggle, close, send, messages, busy, error, commands, loadCatalog, sessionId, reset, pathname } =
-    useCopilot();
+  const {
+    isOpen,
+    toggle,
+    close,
+    send,
+    messages,
+    busy,
+    error,
+    commands,
+    loadCatalog,
+    checkConnection,
+    sessionId,
+    reset,
+    retry,
+    connection,
+    modelLabel,
+    pathname,
+  } = useCopilot();
+
   const [input, setInput] = useState('');
   const [showPalette, setShowPalette] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -31,18 +56,23 @@ export default function CopilotSidebar() {
     return () => window.removeEventListener('keydown', fn);
   }, [isOpen, toggle, close]);
 
-  // Load skills catalog on first open
+  // On first open: probe health + load catalog
   useEffect(() => {
-    if (isOpen && !commands.length) loadCatalog();
-  }, [isOpen, commands.length, loadCatalog]);
+    if (isOpen && connection.status === 'unknown') {
+      void checkConnection();
+      void loadCatalog();
+    }
+  }, [isOpen, connection.status, checkConnection, loadCatalog]);
 
-  // Autofocus + scroll
+  // Autofocus on open
   useEffect(() => {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 80);
   }, [isOpen]);
+
+  // Auto-scroll on new content
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages.length, busy]);
+  }, [messages.length, busy, error]);
 
   const submit = () => {
     const v = input.trim();
@@ -92,7 +122,7 @@ export default function CopilotSidebar() {
           right: 0,
           bottom: 0,
           width: SIDEBAR_WIDTH,
-          background: 'rgba(255,255,255,0.96)',
+          background: 'rgba(255,255,255,0.97)',
           backdropFilter: 'saturate(180%) blur(20px)',
           WebkitBackdropFilter: 'saturate(180%) blur(20px)',
           borderLeft: '1px solid rgba(15,23,42,0.08)',
@@ -114,9 +144,10 @@ export default function CopilotSidebar() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: 8,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <div
               style={{
                 width: 30,
@@ -128,28 +159,40 @@ export default function CopilotSidebar() {
                 color: '#fff',
                 fontWeight: 800,
                 fontSize: 14,
+                flexShrink: 0,
               }}
             >
               ✦
             </div>
-            <div>
-              <div style={{ fontSize: 13.5, fontWeight: 700 }}>Banker Copilot</div>
-              <div style={{ fontSize: 10.5, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                Drafts for review · Human decides
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700 }}>Banker Copilot</span>
+                <StatusPill connection={connection} />
               </div>
+              {modelLabel && (
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    color: '#64748b',
+                    fontFamily: 'ui-monospace, monospace',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={modelLabel}
+                >
+                  {modelLabel}
+                </div>
+              )}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
             {sessionId && (
-              <button
-                onClick={reset}
-                title="New conversation"
-                style={iconBtnStyle}
-              >
+              <button onClick={reset} title="新对话" style={iconBtnStyle}>
                 ⟲
               </button>
             )}
-            <button onClick={close} title="Close (Esc)" style={iconBtnStyle}>
+            <button onClick={close} title="关闭 (Esc)" style={iconBtnStyle}>
               ✕
             </button>
           </div>
@@ -173,7 +216,7 @@ export default function CopilotSidebar() {
           </span>
         </div>
 
-        {/* Messages */}
+        {/* Messages area */}
         <div
           ref={scrollRef}
           style={{
@@ -185,31 +228,27 @@ export default function CopilotSidebar() {
             gap: 12,
           }}
         >
-          {messages.length === 0 && !busy && (
+          {connection.status === 'down' && (
+            <ConnectionDownCard reason={connection.reason} onRetry={retry} />
+          )}
+          {messages.length === 0 && !busy && connection.status !== 'down' && (
             <EmptyState commands={commands} onPick={(c) => setInput(`/${c} `)} />
           )}
           {messages.map((m) => (
             <Bubble key={m.id} role={m.role} content={m.content} />
           ))}
           {busy && <ThinkingBubble />}
-          {error && (
-            <div
-              style={{
-                background: '#fef2f2',
-                color: '#b91c1c',
-                padding: '8px 12px',
-                borderRadius: 8,
-                fontSize: 12,
-                border: '1px solid rgba(220,38,38,0.18)',
-              }}
-            >
-              {error}
-            </div>
-          )}
+          {error && !busy && <ErrorCard message={error} onRetry={retry} />}
         </div>
 
         {/* Composer */}
-        <footer style={{ padding: '10px 14px 14px', borderTop: '1px solid #e6eaf0', position: 'relative' }}>
+        <footer
+          style={{
+            padding: '10px 14px 14px',
+            borderTop: '1px solid #e6eaf0',
+            position: 'relative',
+          }}
+        >
           {showPalette && commands.length > 0 && (
             <div
               style={{
@@ -238,7 +277,14 @@ export default function CopilotSidebar() {
                     }}
                     style={paletteRowStyle}
                   >
-                    <span style={{ color: '#db0011', fontFamily: 'ui-monospace, monospace' }}>/{c.name}</span>
+                    <span
+                      style={{
+                        color: '#db0011',
+                        fontFamily: 'ui-monospace, monospace',
+                      }}
+                    >
+                      /{c.name}
+                    </span>
                   </button>
                 ))}
             </div>
@@ -257,7 +303,10 @@ export default function CopilotSidebar() {
               }
             }}
             rows={3}
-            placeholder='输入消息，或 "/" 唤起命令'
+            placeholder={
+              connection.status === 'down' ? '请先解决连接问题…' : '输入消息，或 "/" 唤起命令'
+            }
+            disabled={connection.status === 'down'}
             style={{
               width: '100%',
               resize: 'none',
@@ -267,29 +316,42 @@ export default function CopilotSidebar() {
               fontSize: 13.5,
               fontFamily: 'inherit',
               color: '#0b1220',
-              background: '#fff',
+              background: connection.status === 'down' ? '#f6f8fb' : '#fff',
               outline: 'none',
               transition: 'border-color 120ms',
             }}
             onFocus={(e) => (e.currentTarget.style.borderColor = '#002966')}
             onBlur={(e) => (e.currentTarget.style.borderColor = '#e6eaf0')}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 6,
+            }}
+          >
             <span style={{ fontSize: 10.5, color: '#94a3b8' }}>
               Enter 发送 · Shift+Enter 换行 · "/" 命令
             </span>
             <button
               onClick={submit}
-              disabled={busy || !input.trim()}
+              disabled={busy || !input.trim() || connection.status === 'down'}
               style={{
-                background: busy || !input.trim() ? '#cbd5e1' : '#db0011',
+                background:
+                  busy || !input.trim() || connection.status === 'down'
+                    ? '#cbd5e1'
+                    : '#db0011',
                 color: '#fff',
                 border: 'none',
                 padding: '7px 16px',
                 borderRadius: 8,
                 fontWeight: 600,
                 fontSize: 12.5,
-                cursor: busy || !input.trim() ? 'not-allowed' : 'pointer',
+                cursor:
+                  busy || !input.trim() || connection.status === 'down'
+                    ? 'not-allowed'
+                    : 'pointer',
                 transition: 'background 120ms',
               }}
             >
@@ -302,7 +364,9 @@ export default function CopilotSidebar() {
   );
 }
 
-// ---------- helpers ----------
+// ════════════════════════════════════════════════════════════
+// Sub-components
+// ════════════════════════════════════════════════════════════
 
 const iconBtnStyle: React.CSSProperties = {
   width: 28,
@@ -326,25 +390,67 @@ const paletteRowStyle: React.CSSProperties = {
   fontSize: 12.5,
 };
 
+function StatusPill({ connection }: { connection: any }) {
+  if (connection.status === 'ok') {
+    const title = `Provider: ${connection.provider} · Model: ${connection.model}${connection.keyConfigured ? '' : ' · ⚠ key not configured'}`;
+    return (
+      <span className="copilot-status-pill ok" title={title}>
+        <span className="dot" />
+        在线
+      </span>
+    );
+  }
+  if (connection.status === 'down') {
+    return (
+      <span className="copilot-status-pill down" title={connection.reason}>
+        <span className="dot" />
+        离线
+      </span>
+    );
+  }
+  return (
+    <span className="copilot-status-pill unknown">
+      <span className="dot" />
+      连接中
+    </span>
+  );
+}
+
 function Bubble({ role, content }: { role: string; content: string }) {
   const isUser = role === 'USER';
+  if (isUser) {
+    return (
+      <div
+        style={{
+          alignSelf: 'flex-end',
+          maxWidth: '90%',
+          padding: '10px 14px',
+          borderRadius: 14,
+          background: 'linear-gradient(135deg, #002966, #1e3a8a)',
+          color: '#fff',
+          fontSize: 13.5,
+          lineHeight: 1.55,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {content}
+      </div>
+    );
+  }
   return (
     <div
       style={{
-        alignSelf: isUser ? 'flex-end' : 'flex-start',
-        maxWidth: '90%',
-        padding: '10px 14px',
+        alignSelf: 'flex-start',
+        maxWidth: '95%',
+        padding: '12px 14px',
         borderRadius: 14,
-        background: isUser ? 'linear-gradient(135deg, #002966, #1e3a8a)' : '#f6f8fb',
-        color: isUser ? '#fff' : '#0b1220',
-        fontSize: 13.5,
-        lineHeight: 1.55,
-        whiteSpace: 'pre-wrap',
+        background: '#f6f8fb',
+        border: '1px solid #e6eaf0',
         wordBreak: 'break-word',
-        border: isUser ? 'none' : '1px solid #e6eaf0',
       }}
     >
-      {content}
+      <Markdown text={content} />
     </div>
   );
 }
@@ -364,9 +470,56 @@ function ThinkingBubble() {
     >
       <span className="copilot-dots">●●●</span>
       <style>{`
-        @keyframes pulse { 0%,100% { opacity:0.4 } 50% { opacity:1 } }
-        .copilot-dots { animation: pulse 1.2s ease-in-out infinite; letter-spacing: 2px; }
+        @keyframes copilot-thinking { 0%,100% { opacity:0.4 } 50% { opacity:1 } }
+        .copilot-dots { animation: copilot-thinking 1.2s ease-in-out infinite; letter-spacing: 2px; }
       `}</style>
+    </div>
+  );
+}
+
+function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="copilot-error-card">
+      <strong>出错了</strong>
+      <pre>{message}</pre>
+      <button onClick={onRetry}>重试连接</button>
+    </div>
+  );
+}
+
+function ConnectionDownCard({
+  reason,
+  onRetry,
+}: {
+  reason: string;
+  onRetry: () => void;
+}) {
+  const noKey = /OPENROUTER_API_KEY/i.test(reason) || /NO_API_KEY/.test(reason);
+  return (
+    <div className="copilot-error-card">
+      <strong>Copilot 服务未就绪</strong>
+      <div style={{ marginTop: 6, color: '#7f1d1d' }}>
+        {noKey ? (
+          <>
+            <p>
+              没找到 <code>OPENROUTER_API_KEY</code>。在仓库根 <code>.env</code> 里加：
+            </p>
+            <pre>{`OPENROUTER_API_KEY=sk-or-v1-...
+COPILOT_MODEL=anthropic/claude-sonnet-4.5`}</pre>
+            <p>然后重启 <code>pnpm dev</code>（Vite 启动时才会读 .env）。</p>
+          </>
+        ) : (
+          <>
+            <p>无法连接到 Copilot 后端：</p>
+            <pre>{reason}</pre>
+            <p>
+              开发模式下 Copilot 跑在 Vite 内置插件里，应该自动可用。
+              如果一直离线，重启 <code>pnpm dev</code>。
+            </p>
+          </>
+        )}
+      </div>
+      <button onClick={onRetry}>重新检测</button>
     </div>
   );
 }
@@ -379,9 +532,10 @@ function EmptyState({
   onPick: (name: string) => void;
 }) {
   return (
-    <div style={{ color: '#64748b', fontSize: 13, lineHeight: 1.55 }}>
+    <div style={{ color: '#475569', fontSize: 13, lineHeight: 1.6 }}>
       <p style={{ marginBottom: 12 }}>
-        我是 <strong>Banker Copilot</strong>。我能查 BankerOS 数据，按内部规范帮你起草信贷备忘录、KYC 评审、NPL 报告、董事会简报等。
+        我是 <strong>Banker Copilot</strong>。我能查 BankerOS 数据，按内部规范帮你起草
+        信贷备忘录、KYC 评审、NPL 报告、董事会简报等。
       </p>
       <p style={{ marginBottom: 8, color: '#94a3b8', fontSize: 11 }}>常用斜杠命令：</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -397,7 +551,14 @@ function EmptyState({
               background: '#fff',
             }}
           >
-            <span style={{ color: '#db0011', fontFamily: 'ui-monospace, monospace' }}>/{c.name}</span>
+            <span
+              style={{
+                color: '#db0011',
+                fontFamily: 'ui-monospace, monospace',
+              }}
+            >
+              /{c.name}
+            </span>
           </button>
         ))}
       </div>

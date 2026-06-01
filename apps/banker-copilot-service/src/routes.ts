@@ -1,11 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { jwtVerify } from 'jose';
-import { prisma } from '@bankeros/database';
 import { failure, success } from '@bankeros/shared-utils';
 import { ALL_TOOLS, filterToolsForRole } from '@bankeros/mcp-bankeros';
 import { loadSkills, loadCommands } from './skill-loader';
 import { runTurn } from './copilot';
+import { getStore } from './store';
 
 const CreateSessionSchema = z.object({
   /** Optional first message to immediately drive a turn */
@@ -104,9 +104,8 @@ export async function copilotRoutes(app: FastifyInstance) {
     if (!body.success) {
       return reply.status(422).send(failure('VALIDATION_ERROR', 'Invalid body', body.error.flatten()));
     }
-    const session = await prisma.copilotSession.create({
-      data: { userId: u.userId },
-    });
+    const store = await getStore();
+    const session = await store.createSession(u.userId);
 
     if (body.data.firstMessage) {
       const result = await runTurn({
@@ -135,7 +134,8 @@ export async function copilotRoutes(app: FastifyInstance) {
     const u = await getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
     const { id } = req.params as { id: string };
-    const session = await prisma.copilotSession.findUnique({ where: { id } });
+    const store = await getStore();
+    const session = await store.getSession(id);
     if (!session) return reply.status(404).send(failure('NOT_FOUND', 'Session not found'));
     if (session.userId !== u.userId) {
       return reply.status(403).send(failure('FORBIDDEN', 'Session belongs to another user'));
@@ -168,18 +168,14 @@ export async function copilotRoutes(app: FastifyInstance) {
     const u = await getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
     const { id } = req.params as { id: string };
-    const session = await prisma.copilotSession.findUnique({
-      where: { id },
-      include: {
-        messages: { orderBy: { createdAt: 'asc' } },
-        artefacts: { orderBy: { createdAt: 'desc' } },
-      },
-    });
+    const store = await getStore();
+    const session = await store.getSession(id);
     if (!session) return reply.status(404).send(failure('NOT_FOUND', 'Session not found'));
     if (session.userId !== u.userId) {
       return reply.status(403).send(failure('FORBIDDEN', 'Session belongs to another user'));
     }
-    return success(session);
+    const messages = await store.listMessages(id, 200);
+    return success({ ...session, messages });
   });
 
   /** Read a single artefact (IC memo / KYC opinion / etc.) */
@@ -187,13 +183,11 @@ export async function copilotRoutes(app: FastifyInstance) {
     const u = await getUser(req);
     if (!u) return reply.status(401).send(failure('UNAUTHORIZED', 'Missing user context'));
     const { id } = req.params as { id: string };
-    const a = await prisma.copilotArtefact.findUnique({
-      where: { id },
-      include: { session: true },
-    });
+    const store = await getStore();
+    const a = await store.getArtefact(id);
     if (!a) return reply.status(404).send(failure('NOT_FOUND', 'Artefact not found'));
-    if (a.session.userId !== u.userId) {
-      // Allow EXECUTIVE/AUDITOR/CRO to read across users
+    const session = await store.getSession(a.sessionId);
+    if (session && session.userId !== u.userId) {
       const cross = ['EXECUTIVE', 'AUDITOR', 'CRO', 'SUPER_ADMIN'];
       if (!cross.includes(u.role)) {
         return reply.status(403).send(failure('FORBIDDEN', 'Artefact belongs to another user'));

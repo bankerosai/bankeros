@@ -1,23 +1,31 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { copilotDevPlugin } from './src/dev/copilot-dev-plugin';
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 5200,
-    proxy: {
-      // Banker Copilot → its dedicated microservice on :3017.
-      // Routed before the generic /api proxy so /v1/copilot does NOT go to the gateway.
-      '/v1/copilot': {
-        target: 'http://localhost:3017',
-        changeOrigin: true,
-      },
-      // Everything else under /api → API Gateway.
-      '/api': {
-        target: 'http://localhost:3000',
-        rewrite: (path) => path.replace(/^\/api/, ''),
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  // Load .env from the monorepo root so OPENROUTER_API_KEY is available
+  // to the dev plugin running inside this same Vite process.
+  const envFromAppDir = loadEnv(mode, process.cwd(), '');
+  const envFromRepoRoot = loadEnv(mode, `${process.cwd()}/../..`, '');
+  for (const [k, v] of Object.entries({ ...envFromRepoRoot, ...envFromAppDir })) {
+    if (process.env[k] === undefined) process.env[k] = v as string;
+  }
+
+  return {
+    plugins: [
+      react(),
+      copilotDevPlugin(), // serves /v1/copilot/* in dev — no separate service needed
+    ],
+    server: {
+      port: 5200,
+      proxy: {
+        // Everything else under /api → API Gateway (only if it's running)
+        '/api': {
+          target: 'http://localhost:3000',
+          rewrite: (path) => path.replace(/^\/api/, ''),
+          changeOrigin: true,
+        },
       },
     },
-  },
+  };
 });

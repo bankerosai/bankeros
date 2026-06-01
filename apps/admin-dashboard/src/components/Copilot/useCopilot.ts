@@ -1,6 +1,7 @@
 /**
  * Lightweight zustand-ish store for Copilot session state.
- * Avoids adding new dependencies — uses a tiny pub/sub.
+ * Includes a tiny pub/sub + robust HTTP wrapper that surfaces real error
+ * messages instead of opaque "Failed to execute 'json'" failures.
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -17,6 +18,11 @@ export interface CopilotSkill {
   description: string;
 }
 
+export type CopilotConnection =
+  | { status: 'unknown' }
+  | { status: 'ok'; provider: string; model: string; keyConfigured: boolean }
+  | { status: 'down'; reason: string };
+
 interface CopilotState {
   isOpen: boolean;
   sessionId: string | null;
@@ -25,6 +31,8 @@ interface CopilotState {
   commands: { name: string }[];
   busy: boolean;
   error: string | null;
+  connection: CopilotConnection;
+  modelLabel: string | null;
 }
 
 const initial: CopilotState = {
@@ -35,6 +43,8 @@ const initial: CopilotState = {
   commands: [],
   busy: false,
   error: null,
+  connection: { status: 'unknown' },
+  modelLabel: null,
 };
 
 let state: CopilotState = { ...initial };
@@ -56,14 +66,39 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
+/** Robust fetch — never throws an opaque JSON-parse error. */
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...getAuthHeaders(), ...(init?.headers ?? {}) },
-  });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
-  return body.data as T;
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: { ...getAuthHeaders(), ...(init?.headers ?? {}) },
+    });
+  } catch (e: any) {
+    throw new Error(`无法连接 Copilot 服务（${API_BASE}${path}）：${e?.message ?? e}`);
+  }
+
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) {
+      throw new Error(`服务返回 ${res.status} 且响应体为空。多半是后端服务没起来。`);
+    }
+    return undefined as unknown as T;
+  }
+
+  let body: any;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error(`服务返回非 JSON 内容 (HTTP ${res.status})：${text.slice(0, 200)}`);
+  }
+
+  if (!res.ok) {
+    const msg = body?.error?.message ?? body?.message ?? `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  // Service wraps successful responses as { success: true, data: ... }
+  return (body?.data ?? body) as T;
 }
 
 /** Hook for any component to read + mutate Copilot state. */
@@ -82,12 +117,35 @@ export function useCopilot() {
   const close = useCallback(() => set({ isOpen: false }), []);
   const toggle = useCallback(() => set({ isOpen: !state.isOpen }), []);
 
+  /** Probe the backend; populates connection + modelLabel. */
+  const checkConnection = useCallback(async () => {
+    try {
+      const h = await api<{
+        ok: boolean;
+        provider: string;
+        model: string;
+        keyConfigured: boolean;
+      }>('/health');
+      set({
+        connection: {
+          status: 'ok',
+          provider: h.provider,
+          model: h.model,
+          keyConfigured: h.keyConfigured,
+        },
+        modelLabel: h.model,
+      });
+    } catch (e: any) {
+      set({ connection: { status: 'down', reason: e.message ?? String(e) } });
+    }
+  }, []);
+
   const loadCatalog = useCallback(async () => {
     try {
       const data = await api<{ skills: CopilotSkill[]; commands: { name: string }[] }>(
         '/skills',
       );
-      set({ skills: data.skills, commands: data.commands });
+      set({ skills: data.skills, commands: data.commands, error: null });
     } catch (e: any) {
       set({ error: e.message });
     }
@@ -130,7 +188,7 @@ export function useCopilot() {
         const assistant: CopilotMessage = {
           id: `local-${Date.now() + 1}`,
           role: 'ASSISTANT',
-          content: assistantText,
+          content: assistantText || '（模型未返回内容）',
           createdAt: new Date().toISOString(),
         };
         set({
@@ -145,7 +203,11 @@ export function useCopilot() {
     [loc.pathname],
   );
 
-  const reset = useCallback(() => set({ ...initial }), []);
+  const reset = useCallback(() => set({ ...initial, isOpen: state.isOpen }), []);
+  const retry = useCallback(() => {
+    void checkConnection();
+    void loadCatalog();
+  }, [checkConnection, loadCatalog]);
 
   return {
     ...state,
@@ -154,8 +216,10 @@ export function useCopilot() {
     close,
     toggle,
     loadCatalog,
+    checkConnection,
     send,
     reset,
+    retry,
   };
 }
 

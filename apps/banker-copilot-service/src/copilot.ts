@@ -6,7 +6,6 @@
  *   getProvider() picks Anthropic (default) or OpenRouter from env.
  *   The orchestrator never touches provider-specific SDK shapes.
  */
-import { prisma } from '@bankeros/database';
 import {
   ALL_TOOLS,
   filterToolsForRole,
@@ -22,6 +21,7 @@ import {
   type ChatMessage,
   type ChatToolCall,
 } from './providers';
+import { getStore } from './store';
 
 const MAX_TOKENS = parseInt(process.env.COPILOT_MAX_TOKENS || '4096');
 const MAX_TOOL_ROUNDS = parseInt(process.env.COPILOT_MAX_TOOL_ROUNDS || '8');
@@ -69,17 +69,13 @@ function computeCost(usage: {
 
 /** Convert persisted DB messages into the provider-agnostic ChatMessage shape. */
 async function loadHistory(sessionId: string): Promise<ChatMessage[]> {
-  const rows = await prisma.copilotMessage.findMany({
-    where: { sessionId },
-    orderBy: { createdAt: 'asc' },
-    take: 40,
-  });
+  const store = await getStore();
+  const rows = await store.listMessages(sessionId, 40);
   const out: ChatMessage[] = [];
   for (const r of rows) {
     if (r.role === 'USER') {
       out.push({ role: 'user', content: r.content });
     } else if (r.role === 'ASSISTANT') {
-      // Pending tool calls (if any) are stored in toolCalls JSON
       const tc = (r.toolCalls as any)?.toolCalls as ChatToolCall[] | undefined;
       out.push({ role: 'assistant', content: r.content, toolCalls: tc });
     } else if (r.role === 'TOOL') {
@@ -126,10 +122,10 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
     userId: promptCtx.userId,
   };
 
+  const store = await getStore();
+
   // Persist the inbound user message
-  await prisma.copilotMessage.create({
-    data: { sessionId, role: 'USER', content: userMessage, tokens: 0 },
-  });
+  await store.appendMessage({ sessionId, role: 'USER', content: userMessage, tokens: 0 });
 
   // Build initial messages array from history; replace the most recent USER turn
   // with the (possibly expanded) effective message.
@@ -176,14 +172,12 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
 
     // Append the assistant turn (text + pending tool_calls) to history + messages
     messages.push({ role: 'assistant', content: r.text, toolCalls: r.toolCalls });
-    await prisma.copilotMessage.create({
-      data: {
-        sessionId,
-        role: 'ASSISTANT',
-        content: r.text,
-        toolCalls: { toolCalls: r.toolCalls },
-        tokens: r.usage.outputTokens,
-      },
+    await store.appendMessage({
+      sessionId,
+      role: 'ASSISTANT',
+      content: r.text,
+      toolCalls: { toolCalls: r.toolCalls },
+      tokens: r.usage.outputTokens,
     });
 
     // Execute each tool the model requested
@@ -194,34 +188,32 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
         ? JSON.stringify(exec.result).slice(0, 16000)
         : `ERROR: ${exec.error}`;
       messages.push({ role: 'tool', content, toolCallId: tc.id });
-      await prisma.copilotMessage.create({
-        data: {
-          sessionId,
-          role: 'TOOL',
-          content,
-          toolCalls: { name: tc.name, input: tc.arguments, tool_use_id: tc.id, ok: exec.ok },
-          tokens: 0,
-        },
+      await store.appendMessage({
+        sessionId,
+        role: 'TOOL',
+        content,
+        toolCalls: { name: tc.name, input: tc.arguments, tool_use_id: tc.id, ok: exec.ok },
+        tokens: 0,
       });
     }
   }
 
   // Persist final assistant message
-  await prisma.copilotMessage.create({
-    data: { sessionId, role: 'ASSISTANT', content: finalText, tokens: totalOut },
+  await store.appendMessage({
+    sessionId,
+    role: 'ASSISTANT',
+    content: finalText,
+    tokens: totalOut,
   });
 
   // Save substantial slash-command outputs as artefacts
   let artefact: RunTurnOutput['artefact'];
   if (slash && finalText.length > 400) {
-    const a = await prisma.copilotArtefact.create({
-      data: {
-        sessionId,
-        skill: slash.cmd.name,
-        subject: slash.args || '(no subject)',
-        content: finalText,
-        status: 'DRAFT',
-      },
+    const a = await store.createArtefact({
+      sessionId,
+      skill: slash.cmd.name,
+      subject: slash.args || '(no subject)',
+      content: finalText,
     });
     artefact = { id: a.id, skill: a.skill, subject: a.subject };
   }
@@ -232,13 +224,7 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnOutput> {
     cacheReadTokens: totalCacheRead,
     cacheWriteTokens: totalCacheWrite,
   });
-  await prisma.copilotSession.update({
-    where: { id: sessionId },
-    data: {
-      totalTokens: { increment: totalIn + totalOut },
-      totalCost: { increment: cost },
-    },
-  });
+  await store.bumpSessionUsage(sessionId, totalIn + totalOut, cost);
 
   return {
     assistantText: finalText,
