@@ -3,6 +3,7 @@ import './styles.css';
 import './styles-banking-v2.css';
 import './styles-portal-v2.css';
 import './styles-contrast-fix.css'; // must be last — overrides any leftover dark-on-dark / white-on-white
+import './styles-wukong-site.css';
 import { applyTheme, getInitialTheme } from './components/ThemeToggle';
 import CopilotSidebar from './components/Copilot/CopilotSidebar';
 
@@ -143,6 +144,7 @@ import DigitalAssets from './pages/DigitalAssets';
 import Batch from './pages/Batch';
 import OpenBanking from './pages/OpenBanking';
 import MiddleOffice from './pages/MiddleOffice';
+import WukongSite from './pages/WukongSite';
 
 function AdminLayout({ children }: { children: React.ReactNode }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated());
@@ -177,7 +179,20 @@ export default function App() {
     <>
     <Routes>
       {/* ───── PUBLIC PORTAL (HSBC/招行 style) ───── */}
-      <Route path="/"                  element={<Home />} />
+      <Route path="/"                  element={<WukongSite lang="zh" page="home" />} />
+      <Route path="/en"                element={<WukongSite lang="en" page="home" />} />
+      <Route path="/platform"          element={<WukongSite lang="zh" page="platform" />} />
+      <Route path="/en/platform"       element={<WukongSite lang="en" page="platform" />} />
+      <Route path="/open-source"       element={<WukongSite lang="zh" page="openSource" />} />
+      <Route path="/en/open-source"    element={<WukongSite lang="en" page="openSource" />} />
+      <Route path="/developers"        element={<WukongSite lang="zh" page="developers" />} />
+      <Route path="/en/developers"     element={<WukongSite lang="en" page="developers" />} />
+      <Route path="/data-health"       element={<WukongSite lang="zh" page="dataHealth" />} />
+      <Route path="/en/data-health"    element={<WukongSite lang="en" page="dataHealth" />} />
+      <Route path="/ai"                element={<WukongSite lang="zh" page="ai" />} />
+      <Route path="/en/ai"             element={<WukongSite lang="en" page="ai" />} />
+      <Route path="/pricing"           element={<WukongSite lang="zh" page="pricing" />} />
+      <Route path="/en/pricing"        element={<WukongSite lang="en" page="pricing" />} />
       <Route path="/products/personal" element={<ProductPersonal />} />
       <Route path="/products/business" element={<ProductBusiness />} />
       <Route path="/login"             element={<PortalLogin />} />
