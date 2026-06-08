@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>BankerOS · Service Worker Killer</title>
+  <style>
+    body {
+      font-family: -apple-system, system-ui, sans-serif;
+      max-width: 640px;
+      margin: 60px auto;
+      padding: 0 20px;
+      color: #0b1220;
+      background: linear-gradient(135deg, #f7f9fc, #ffffff);
+      min-height: 100vh;
+    }
+    h1 { font-size: 22px; margin: 0 0 18px; }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      overflow-x: auto;
+      margin: 14px 0;
+    }
+    .ok { color: #15803d; font-weight: 600; }
+    .warn { color: #b45309; }
+    .err { color: #b91c1c; font-weight: 600; }
+    button {
+      background: #db0011; color: #fff; border: none;
+      padding: 10px 18px; border-radius: 8px; font-weight: 600;
+      cursor: pointer; font-size: 14px;
+    }
+    button:hover { background: #b00010; }
+    .panel {
+      background: #fff;
+      border: 1px solid #e6eaf0;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧹 BankerOS · Service Worker 清理器</h1>
+
+  <p>这个页面会列出你浏览器在 <code>localhost:5200</code> 上注册的所有 Service Worker
+  和 Cache Storage，然后把它们全部清掉。BankerOS 本身从不注册 SW —— 如果有，
+  100% 是之前在同一端口跑过的别的应用（如悟空 CRM）留下的。</p>
+
+  <div class="panel" id="report">检测中…</div>
+
+  <button id="nuke">🗑 立刻清除全部 SW + Cache</button>
+  <button id="reload" style="background:#002966; margin-left:8px">↻ 然后跳回 /admin</button>
+
+  <script>
+    const report = document.getElementById('report');
+    async function audit() {
+      const lines = [];
+      if (!('serviceWorker' in navigator)) {
+        lines.push('<span class="warn">浏览器不支持 Service Worker（不可能有缓存问题）</span>');
+      } else {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        if (regs.length === 0) {
+          lines.push('<span class="ok">✓ 没有任何 Service Worker 注册 — 不是 SW 问题</span>');
+        } else {
+          lines.push(`<span class="err">⚠ 发现 ${regs.length} 个 Service Worker：</span>`);
+          regs.forEach((r, i) => {
+            const scope = r.scope || '(unknown scope)';
+            const sw = r.active?.scriptURL || r.waiting?.scriptURL || r.installing?.scriptURL || 'unknown script';
+            lines.push(`  ${i + 1}. scope: <code>${scope}</code><br>     script: <code>${sw}</code>`);
+          });
+        }
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        if (keys.length === 0) {
+          lines.push('<span class="ok">✓ Cache Storage 是空的</span>');
+        } else {
+          lines.push(`<span class="err">⚠ Cache Storage 里有 ${keys.length} 个 cache：</span>`);
+          keys.forEach((k) => lines.push(`  · <code>${k}</code>`));
+        }
+      }
+      report.innerHTML = lines.join('<br>');
+    }
+    audit();
+
+    document.getElementById('nuke').addEventListener('click', async () => {
+      const lines = [];
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const r of regs) {
+          const ok = await r.unregister();
+          lines.push(`${ok ? '✓' : '✗'} unregister ${r.scope}`);
+        }
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        for (const k of keys) {
+          const ok = await caches.delete(k);
+          lines.push(`${ok ? '✓' : '✗'} caches.delete ${k}`);
+        }
+      }
+      lines.push('<br><span class="ok">完成。点 ↻ 按钮跳回 BankerOS 后台。</span>');
+      report.innerHTML = lines.join('<br>');
+    });
+
+    document.getElementById('reload').addEventListener('click', () => {
+      location.href = '/admin';
+    });
+  </script>
+</body>
+</html>

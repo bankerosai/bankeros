@@ -18,6 +18,10 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       port: 5200,
+      // Listen on every interface (IPv4 + IPv6) so localhost / 127.0.0.1 /
+      // [::1] all reach the same Vite instance — avoids "browser uses one
+      // family, Vite binds the other" confusion.
+      host: '0.0.0.0',
       proxy: {
         // Everything else under /api → API Gateway (only if it's running)
         '/api': {
