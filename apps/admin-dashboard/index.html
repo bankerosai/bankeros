@@ -19,6 +19,28 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      Self-heal: BankerOS does not register any Service Worker. If a previous
+      app served on this port (悟空 CRM, an old PWA, etc.) left one behind,
+      it would intercept every fetch and serve its cached HTML. Unregister
+      anything we find and wipe caches on first paint.
+    -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          if (!regs.length) return;
+          console.warn('[bankeros] removing', regs.length, 'leftover service worker(s)');
+          Promise.all(regs.map((r) => r.unregister())).then(() => {
+            if ('caches' in window) {
+              caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+                .finally(() => location.reload());
+            } else {
+              location.reload();
+            }
+          });
+        });
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
